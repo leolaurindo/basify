@@ -1,6 +1,6 @@
 {
 	"name": "basify",
-	"version": "0.1.0",
+	"version": "0.1.1",
 	"description": "Convert a selected list or table into an Obsidian base, creating one note per item.",
 	"main": "main.js",
 	"type": "module",
