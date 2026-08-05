@@ -1,4 +1,4 @@
-import { Editor } from 'obsidian';
+import { Editor, EditorPosition } from 'obsidian';
 
 export type Selection = TableSelection | ListSelection;
 
@@ -6,19 +6,33 @@ export interface TableSelection {
 	type: 'table';
 	columns: string[];
 	rows: Record<string, string>[];
+	hasHeader: boolean;
+}
+
+export interface ListItem {
+	text: string;
+	done: boolean | null;
 }
 
 export interface ListSelection {
 	type: 'list';
-	items: string[];
+	items: ListItem[];
+}
+
+export interface SelectionBlock {
+	text: string;
+	from: EditorPosition;
+	to: EditorPosition;
 }
 
 const LIST_MARKER = /^\s*(?:[-*+]|\d+[.)])\s/;
 
-export function getSelectionBlock(editor: Editor): string {
+export function getSelectionBlock(editor: Editor): SelectionBlock {
 	const selection = editor.getSelection();
+	const from = editor.getCursor('from');
+	const to = editor.getCursor('to');
 	if (selection.trim() !== '') {
-		return selection;
+		return { text: selection, from, to };
 	}
 
 	const cursor = editor.getCursor();
@@ -33,10 +47,14 @@ export function getSelectionBlock(editor: Editor): string {
 		end++;
 	}
 
-	return editor.getRange(
-		{ line: start, ch: 0 },
-		{ line: end, ch: editor.getLine(end).length },
-	);
+	return {
+		text: editor.getRange(
+			{ line: start, ch: 0 },
+			{ line: end, ch: editor.getLine(end).length },
+		),
+		from: { line: start, ch: 0 },
+		to: { line: end, ch: editor.getLine(end).length },
+	};
 }
 
 function isBlockLine(line: string): boolean {
@@ -46,21 +64,32 @@ function isBlockLine(line: string): boolean {
 
 export function parseSelection(text: string): Selection | null {
 	const lines = text.split(/\r?\n/);
-	const tableLines = lines.filter((line) => /^\s*\|/.test(line));
-	if (tableLines.length >= 2) {
-		return parseTable(tableLines);
+	const firstLine = lines.find((line) => line.trim() !== '') ?? '';
+	if (/^\s*\|/.test(firstLine)) {
+		return parseTable(lines.filter((line) => /^\s*\|/.test(line)));
 	}
 	return parseList(lines);
 }
 
 function parseTable(lines: string[]): TableSelection | null {
-	const columns = parseRow(lines[0] ?? '');
-	if (columns.length === 0) {
+	const hasSeparator = lines.length >= 2 && isSeparatorRow(lines[1] ?? '');
+	const headerLine: string | null = hasSeparator
+		? lines[0] ?? ''
+		: null;
+	const dataLines = hasSeparator ? lines.slice(2) : lines;
+
+	const sampleRow = parseRow(headerLine ?? (dataLines[0] ?? ''));
+	if (sampleRow.length === 0) {
 		return null;
 	}
 
+	const columns =
+		headerLine !== null
+			? parseRow(headerLine)
+			: sampleRow.map((_cell, index) => `Column ${index + 1}`);
+
 	const rows: Record<string, string>[] = [];
-	for (const line of lines.slice(2)) {
+	for (const line of dataLines) {
 		const cells = parseRow(line);
 		if (cells.length === 0) {
 			continue;
@@ -72,7 +101,13 @@ function parseTable(lines: string[]): TableSelection | null {
 		rows.push(row);
 	}
 
-	return { type: 'table', columns, rows };
+	return { type: 'table', columns, rows, hasHeader: hasSeparator };
+}
+
+function isSeparatorRow(line: string): boolean {
+	return parseRow(line).every(
+		(cell) => cell === '' || /^:?-+:?$/.test(cell),
+	);
 }
 
 function parseRow(line: string): string[] {
@@ -85,12 +120,14 @@ function parseRow(line: string): string[] {
 }
 
 function parseList(lines: string[]): ListSelection | null {
-	const marker = /^(\s*)(?:[-*+]|\d+[.)])\s+(.*)$/;
+	const plain = /^(\s*)(?:[-*+]|\d+[.)])\s+(.*)$/;
+	const task = /^(\s*)(?:[-*+]|\d+[.)])\s+\[([ xX])\]\s+(.*)$/;
 	let baseIndent: string | null = null;
-	const items: string[] = [];
+	const items: ListItem[] = [];
 
 	for (const line of lines) {
-		const match = line.match(marker);
+		const taskMatch = line.match(task);
+		const match = taskMatch ?? line.match(plain);
 		if (match === null) {
 			continue;
 		}
@@ -98,12 +135,32 @@ function parseList(lines: string[]): ListSelection | null {
 		if (baseIndent === null) {
 			baseIndent = indent;
 		}
-		if (indent === baseIndent) {
-			items.push(stripMarkdown(match[2] ?? '').trim());
+		if (indent !== baseIndent) {
+			continue;
+		}
+		if (taskMatch !== null) {
+			const checked = (taskMatch[2] ?? '').toLowerCase() === 'x';
+			items.push({
+				text: stripMarkdown(taskMatch[3] ?? '').trim(),
+				done: checked,
+			});
+		} else {
+			items.push({
+				text: stripMarkdown(match[2] ?? '').trim(),
+				done: null,
+			});
 		}
 	}
 
 	return items.length > 0 ? { type: 'list', items } : null;
+}
+
+export function isTaskList(selection: Selection): boolean {
+	return (
+		selection.type === 'list' &&
+		selection.items.length > 0 &&
+		selection.items.every((item) => item.done !== null)
+	);
 }
 
 function stripMarkdown(text: string): string {

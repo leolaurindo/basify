@@ -1,14 +1,28 @@
-import { App, TFolder, Vault } from 'obsidian';
-import { Selection } from './selection';
+import { App, TFolder, TFile, Vault } from 'obsidian';
+import { isTaskList, Selection } from './selection';
 
 export interface BasifyOptions {
 	folder: string;
+	baseFolder: string;
 	nameColumn: number | null;
+	mode: 'file' | 'codeblock';
+	columns: string[];
+	statusField: string;
+	embedBase: boolean;
+	extractTags: boolean;
+	extractDates: boolean;
+	extractDynamic: boolean;
+	nameSeparator: 'space' | 'dash' | 'underscore';
+	fileNameField: string;
+	fileNameFieldSeparator: 'space' | 'dash' | 'underscore';
+	lowercaseNames: boolean;
+	lowercaseNameField: boolean;
+	lowercaseYamlFields: boolean;
 }
 
 export interface PropertySpec {
 	displayName: string;
-	value: string;
+	value: string | string[];
 }
 
 export interface NoteSpec {
@@ -22,21 +36,89 @@ export interface ConvertInput {
 }
 
 const ILLEGAL_FILENAME_CHARS = /[\\/:*?"<>|#^[\]]/g;
+const TAG_PATTERN = /#([A-Za-z0-9_/-]+)/g;
+const LABELED_DATE = /\b([A-Za-z]+)\s*:\s*(\d{4}-\d{2}-\d{2})\b/g;
+const AT_DATE = /@(\d{4}-\d{2}-\d{2})\b/g;
+const KEY_VALUE = /\b([A-Za-z][A-Za-z0-9_-]*)\s*:\s*([^\s]+)/g;
+const DATE_LABELS = [
+	'due',
+	'start',
+	'end',
+	'at',
+	'date',
+	'scheduled',
+	'deadline',
+];
 
 export function buildConvertInput(
 	selection: Selection,
 	options: BasifyOptions,
 ): ConvertInput {
 	const folder = normalizeFolder(options.folder);
+	const separator = options.nameSeparator ?? 'space';
+	const fileNameField = options.fileNameField.trim();
+	const nameProperty =
+		fileNameField !== ''
+			? {
+					key: propertyKey(fileNameField, options.lowercaseYamlFields),
+					displayName: fileNameField,
+				}
+			: null;
 
 	if (selection.type === 'list') {
-		return {
-			folder,
-			notes: selection.items.map((item) => ({
-				name: sanitizeName(item),
-				properties: {},
-			})),
-		};
+		const taskList = isTaskList(selection);
+		const statusName = options.statusField.trim() || 'status';
+		const statusField = propertyKey(statusName, options.lowercaseYamlFields);
+
+		const notes: NoteSpec[] = [];
+		for (const item of selection.items) {
+			const extracted = extractMetadata(item.text, options);
+			const properties: Record<string, PropertySpec> = {};
+
+			if (extracted.tags.length > 0) {
+				properties.tags = {
+					displayName: 'tags',
+					value: extracted.tags,
+				};
+			}
+			for (const [label, value] of Object.entries(extracted.fields)) {
+				properties[propertyKey(label, options.lowercaseYamlFields)] = {
+					displayName: label,
+					value,
+				};
+			}
+
+			if (taskList) {
+				properties[statusField] = {
+					displayName: statusName,
+					value: item.done ? 'true' : 'false',
+				};
+			}
+
+			const baseName = cleanName(extracted.name);
+			if (nameProperty !== null) {
+				properties[nameProperty.key] = {
+					displayName: nameProperty.displayName,
+					value: applyCase(
+						applySeparator(
+							baseName,
+							options.fileNameFieldSeparator,
+						),
+						options.lowercaseNameField,
+					),
+				};
+			}
+
+			notes.push({
+				name: applyCase(
+					applySeparator(baseName, separator),
+					options.lowercaseNames,
+				),
+				properties,
+			});
+		}
+
+		return { folder, notes };
 	}
 
 	const nameColumn = options.nameColumn ?? 0;
@@ -49,8 +131,11 @@ export function buildConvertInput(
 			if (index === nameColumn) {
 				name = value;
 			} else if (value.trim() !== '') {
-				properties[sanitizeProperty(column)] = {
-					displayName: column,
+				const field =
+					(options.columns[index] ?? column).trim() ||
+					`Column ${index + 1}`;
+				properties[propertyKey(field, options.lowercaseYamlFields)] = {
+					displayName: field,
 					value,
 				};
 			}
@@ -58,13 +143,32 @@ export function buildConvertInput(
 		if (name.trim() === '') {
 			continue;
 		}
-		notes.push({ name: sanitizeName(name), properties });
+		const baseName = cleanName(name);
+		if (nameProperty !== null) {
+			properties[nameProperty.key] = {
+				displayName: nameProperty.displayName,
+				value: applyCase(
+					applySeparator(
+						baseName,
+						options.fileNameFieldSeparator,
+					),
+					options.lowercaseNameField,
+				),
+			};
+		}
+		notes.push({
+			name: applyCase(
+				applySeparator(baseName, separator),
+				options.lowercaseNames,
+			),
+			properties,
+		});
 	}
 
 	return { folder, notes };
 }
 
-export async function convertToBase(
+export async function createNotes(
 	app: App,
 	input: ConvertInput,
 ): Promise<void> {
@@ -74,22 +178,144 @@ export async function convertToBase(
 		const path = availablePath(app.vault, input.folder, note.name, 'md');
 		await app.vault.create(path, buildNoteContent(note));
 	}
+}
 
+export function buildBaseContent(input: ConvertInput): string {
+	return buildBaseFile(input.folder, input.notes);
+}
+
+export async function createBaseFile(
+	app: App,
+	baseFolder: string,
+	nameHint: string,
+	content: string,
+): Promise<TFile> {
 	const basePath = availablePath(
 		app.vault,
-		input.folder,
-		baseName(input.folder),
+		normalizeFolder(baseFolder),
+		baseName(nameHint),
 		'base',
 	);
-	const baseFile = await app.vault.create(
-		basePath,
-		buildBaseFile(input.folder, input.notes),
-	);
-	await app.workspace.getLeaf(true).openFile(baseFile);
+	return app.vault.create(basePath, content);
 }
 
 export function normalizeFolder(folder: string): string {
 	return folder.replace(/^\/+|\/+$/g, '').trim();
+}
+
+interface ExtractedMetadata {
+	name: string;
+	tags: string[];
+	fields: Record<string, string>;
+}
+
+type MetadataCandidate =
+	| { start: number; end: number; type: 'tag'; tag: string }
+	| { start: number; end: number; type: 'field'; label: string; value: string };
+
+function extractMetadata(
+	text: string,
+	options: BasifyOptions,
+): ExtractedMetadata {
+	const doTags = options.extractTags || options.extractDynamic;
+	const doFields = options.extractDates || options.extractDynamic;
+
+	const candidates: MetadataCandidate[] = [];
+
+	if (doTags) {
+		for (const match of text.matchAll(TAG_PATTERN)) {
+			const tag = match[1] ?? '';
+			if (tag !== '') {
+				const start = match.index ?? 0;
+				candidates.push({
+					start,
+					end: start + match[0].length,
+					type: 'tag',
+					tag,
+				});
+			}
+		}
+	}
+
+	if (options.extractDynamic) {
+		for (const match of text.matchAll(KEY_VALUE)) {
+			const key = match[1] ?? '';
+			const lowerKey = key.toLowerCase();
+			if (lowerKey === '' || /^(https?|ftp)$/.test(lowerKey)) {
+				continue;
+			}
+			const value = (match[2] ?? '').replace(/[,.;:!?]+$/g, '');
+			if (value === '') {
+				continue;
+			}
+			const start = match.index ?? 0;
+			candidates.push({
+				start,
+				end: start + match[0].length,
+				type: 'field',
+				label: key,
+				value,
+			});
+		}
+	} else if (doFields) {
+		for (const match of text.matchAll(LABELED_DATE)) {
+			const label = match[1] ?? '';
+			const date = match[2] ?? '';
+			if (date === '') {
+				continue;
+			}
+			const start = match.index ?? 0;
+			candidates.push({
+				start,
+				end: start + match[0].length,
+				type: 'field',
+				label: DATE_LABELS.includes(label.toLowerCase())
+					? label
+					: 'date',
+				value: date,
+			});
+		}
+		for (const match of text.matchAll(AT_DATE)) {
+			const date = match[1] ?? '';
+			if (date === '') {
+				continue;
+			}
+			const start = match.index ?? 0;
+			candidates.push({
+				start,
+				end: start + match[0].length,
+				type: 'field',
+				label: 'date',
+				value: date,
+			});
+		}
+	}
+
+	candidates.sort((a, b) => a.start - b.start);
+
+	const tags: string[] = [];
+	const fields: Record<string, string> = {};
+	const removed: Array<{ start: number; end: number }> = [];
+
+	for (const candidate of candidates) {
+		if (candidate.type === 'tag') {
+			if (!tags.includes(candidate.tag)) {
+				tags.push(candidate.tag);
+			}
+			removed.push({ start: candidate.start, end: candidate.end });
+		} else if (fields[candidate.label] === undefined) {
+			fields[candidate.label] = candidate.value;
+			removed.push({ start: candidate.start, end: candidate.end });
+		}
+	}
+
+	let name = text;
+	for (const range of removed.sort((a, b) => b.start - a.start)) {
+		name = name.slice(0, range.start) + name.slice(range.end);
+	}
+	name = name.replace(/\s+/g, ' ').trim();
+
+	return { name, tags, fields };
 }
 
 function buildNoteContent(note: NoteSpec): string {
@@ -140,13 +366,13 @@ function buildBaseFile(folder: string, notes: NoteSpec[]): string {
 	lines.push('    order:');
 	lines.push('      - file.name');
 	for (const key of keys) {
-		lines.push(`      - note["${escapeQuotes(key)}"]`);
+		lines.push(`      - note.${key}`);
 	}
 
 	return lines.join('\n') + '\n';
 }
 
-function sanitizeName(input: string): string {
+function cleanName(input: string): string {
 	const name = input
 		.replace(ILLEGAL_FILENAME_CHARS, ' ')
 		.replace(/\s+/g, ' ')
@@ -155,16 +381,40 @@ function sanitizeName(input: string): string {
 	return name === '' ? 'Untitled' : name;
 }
 
+function applySeparator(
+	name: string,
+	separator: 'space' | 'dash' | 'underscore',
+): string {
+	if (separator === 'dash') {
+		return name.replace(/ /g, '-');
+	}
+	if (separator === 'underscore') {
+		return name.replace(/ /g, '_');
+	}
+	return name;
+}
+
+function applyCase(name: string, lowercase: boolean): string {
+	return lowercase ? name.toLowerCase() : name;
+}
+
 function sanitizeProperty(input: string): string {
 	const name = input
-		.replace(ILLEGAL_FILENAME_CHARS, ' ')
-		.replace(/\s+/g, '-')
-		.replace(/-+/g, '-')
-		.replace(/^-+|-+$/g, '');
+		.replace(/[^a-zA-Z0-9 _-]+/g, ' ')
+		.replace(/[\s-]+/g, '_')
+		.replace(/^_+|_+$/g, '');
 	return name === '' ? 'property' : name;
 }
 
-function yamlValue(value: string): string {
+function propertyKey(input: string, lowercase: boolean): string {
+	const key = sanitizeProperty(input);
+	return lowercase ? key.toLowerCase() : key;
+}
+
+function yamlValue(value: string | string[]): string {
+	if (Array.isArray(value)) {
+		return `[${value.map((item) => `"${escapeQuotes(item)}"`).join(', ')}]`;
+	}
 	const v = value.trim();
 	if (/^(true|false|TRUE|FALSE)$/.test(v)) {
 		return v.toLowerCase();

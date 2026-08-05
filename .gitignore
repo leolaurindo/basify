@@ -9,6 +9,7 @@
 node_modules
 *.log
 npm-debug.log*
+.test/
 
 # obsidian
 data.json

@@ -3,7 +3,7 @@
 	"name": "Basify",
 	"version": "0.1.0",
 	"minAppVersion": "1.10.0",
-	"description": "Convert a selected list or table into an Obsidian base, creating one note per item.",
+	"description": "Convert lists, tables and task lists into Obsidian base. One note per item.",
 	"author": "Leonardo Laurindo",
 	"authorUrl": "https://github.com/leolaurindo",
 	"isDesktopOnly": false

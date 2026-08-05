@@ -13,6 +13,7 @@ export default defineConfig(
 		'package.json',
 		'package-lock.json',
 		'tsconfig.json',
+		'.test',
 	]),
 	{
 		languageOptions: {
@@ -29,4 +30,16 @@ export default defineConfig(
 		},
 	},
 	...obsidianmd.configs.recommended,
+	{
+		files: ['tests/**/*.ts'],
+		languageOptions: {
+			globals: {
+				...globals.browser,
+				process: 'readonly',
+			},
+		},
+		rules: {
+			'obsidianmd/rule-custom-message': 'off',
+		},
+	},
 );
