@@ -46,7 +46,7 @@ One column becomes the note filenames (you can choose); every other column becom
 | Name        | Author        | Year |
 | ----------- | ------------- | ---- |
 | Rebellion in the Backlands | Euclides da Cunha | 1902 |
-| What is the Third State? | William Gibson| 1984 |
+| What is the Third State? | Seiyès | 1788 |
 | The Black Jacobins | C. L. R. James | 1938 |
 | John Coltrane: His Life and Music | Lewis Porter| 1998 |
 
