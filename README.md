@@ -39,6 +39,8 @@ Checkbox lists become notes with a boolean property for the checkbox state (`[x]
 
 Becomes `Buy milk.md` (with `status: true` and `type: groceries`) and `Pay bills.md` (with `status: false` and `due: 2026-08-04`), and the base shows a checkable **status** column.
 
+The metadata extract is removed from the note filename.
+
 ### Tables
 
 One column becomes the note filenames (you can choose); every other column becomes a frontmatter property.
@@ -66,41 +68,41 @@ Even though obsidian's markdown don't recognize tables without a header row as t
 
 Everything you can configure in the dialog:
 
-**Folders**
+### Folders
 
 - **Output folder** — where the notes are created.
 - **Base files folder** — where the `.base` file is created.
 
-**Note names**
+### Note names
 
 - **Spaces in names** — separator used in the note file names: keep spaces, or replace with dashes or underscores. This adapts to your filesystem preferences; bases work with any of them.
 - **File name field** — optional property that also stores the note name (for example `title`), with its own **spaces in name field** separator and **lowercase name field** option, independent of the filename.
 - **Lowercase file names** - use lowercase letters in the note file names (the file name field, if set, keeps its original case)
-- **Lowercase property names** — use lowercase letters in the frontmatter property names (for example `Publication Year` → `publication_year`).
 
-**List metadata** (lists and task lists)
+
+### Lists (incl. task lists)
 
 - **Extract tags** — `#tag` (and nested `#tag/sub`) become a `tags` list property.
 - **Extract dates** — labeled dates like `due:2025-01-01`, `start:2026-08-01`, or `@2023-04-05` become fields named after the label (`due`, `start`, `date`, ...). An unlisted label (e.g. `meeting:2026-01-01`) falls back to a `date` field — only the first one; extra ones stay in the name.
 - **Dynamic field extraction** — every `key:value` pair becomes a field (so `type: task` → a `type` field). It supersedes the tag and date options: when it's on, tags and dates are extracted too.
 
-Extracted metadata is removed from the note filename.
+- **Lowercase property names** — use lowercase letters in the frontmatter property names (for example `Publication Year` → `publication_year`).
 
-**Task lists**
+### Task lists
 
 - **Status field** — property name for the checkbox state (default `status`).
 
-**Tables**
+### Tables
 
 - **Filename column** — which column becomes the note filenames.
 - **Field names** — for headerless tables, name each column's property (default `Column 1`, `Column 2`, ...).
 
-**Base**
+### Bases
 
 - **Create base as** — create a `.base` file, or **Embed in this note** (insert a `base` code block in place of the selection).
 - **Embed base file in this note** — under `.base` file mode, also insert a link to the base file in the current note.
 
-## Fields
+## Fields convertion
 
 Property names are normalized to work in bases: spaces and dashes become underscores (for example `Publication Year` becomes `Publication_Year`), and can optionally be lowercased (`publication_year`).
 
@@ -132,11 +134,13 @@ The dialog is always the source of truth: whatever you set there is what's used,
 Basify creates new files but never modifies or deletes existing ones. Still, **make sure you have a backup of your vault** before using it, as with any vault automation.
 
 ## Install
+- The best place to install is from obsidian community plugins.
 
+Alternatively:
 - Copy `main.js`, `manifest.json`, `styles.css` to `<Vault>/.obsidian/plugins/basify/`.
 - Enable the plugin in **Settings → Community plugins**.
 
-Requires Obsidian **1.13.0+** (Bases).
+Requires Obsidian **1.13.0+**.
 
 ## Develop
 
