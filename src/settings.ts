@@ -1,4 +1,4 @@
-import { App, PluginSettingTab, Setting } from 'obsidian';
+import { App, PluginSettingTab, SettingDefinitionItem } from 'obsidian';
 import type BasifyPlugin from './main';
 
 export type FolderMode = 'folder' | 'last' | 'fixed';
@@ -53,6 +53,12 @@ export const DEFAULT_MEMORY: BasifyMemory = {
 	lastLowercaseYamlFields: false,
 };
 
+const FOLDER_OPTIONS: Record<string, string> = {
+	folder: 'Same folder as the active note',
+	last: 'Last used',
+	fixed: 'Fixed path',
+};
+
 export class BasifySettingTab extends PluginSettingTab {
 	plugin: BasifyPlugin;
 
@@ -61,70 +67,70 @@ export class BasifySettingTab extends PluginSettingTab {
 		this.plugin = plugin;
 	}
 
-	display(): void {
-		const { containerEl } = this;
-		containerEl.empty();
+	getSettingDefinitions(): SettingDefinitionItem[] {
+		return [
+			{
+				name: 'Default output folder',
+				desc: 'Folder prefilled in the dialog for the notes.',
+				control: {
+					type: 'dropdown',
+					key: 'outputFolderMode',
+					options: FOLDER_OPTIONS,
+					defaultValue: 'folder',
+				},
+			},
+			{
+				name: 'Fixed output folder',
+				desc: 'Used in fixed path mode.',
+				control: {
+					type: 'text',
+					key: 'fixedOutputFolder',
+					placeholder: 'Folder/name',
+					defaultValue: '',
+				},
+				visible: () =>
+					this.plugin.settings.outputFolderMode === 'fixed',
+			},
+			{
+				name: 'Default base files folder',
+				desc: 'Folder prefilled in the dialog for the .base file.',
+				control: {
+					type: 'dropdown',
+					key: 'baseFolderMode',
+					options: FOLDER_OPTIONS,
+					defaultValue: 'folder',
+				},
+			},
+			{
+				name: 'Fixed base files folder',
+				desc: 'Used in fixed path mode.',
+				control: {
+					type: 'text',
+					key: 'fixedBaseFolder',
+					placeholder: 'Folder/name',
+					defaultValue: '',
+				},
+				visible: () =>
+					this.plugin.settings.baseFolderMode === 'fixed',
+			},
+		];
+	}
 
-		new Setting(containerEl)
-			.setName('Default output folder')
-			.setDesc('Folder prefilled in the dialog for the notes.')
-			.addDropdown((dropdown) => {
-				dropdown
-					.addOption('folder', 'Same folder as the active note')
-					.addOption('last', 'Last used')
-					.addOption('fixed', 'Fixed path');
-				dropdown.setValue(this.plugin.settings.outputFolderMode);
-				dropdown.onChange(async (value: string) => {
-					this.plugin.settings.outputFolderMode = value as FolderMode;
-					await this.plugin.saveSettings();
-					this.display();
-				});
-			});
+	getControlValue(key: string): unknown {
+		const settings = this.plugin.settings as unknown as Record<
+			string,
+			unknown
+		>;
+		return settings[key];
+	}
 
-		if (this.plugin.settings.outputFolderMode === 'fixed') {
-			new Setting(containerEl)
-				.setName('Fixed output folder')
-				.setDesc('Used in fixed path mode.')
-				.addText((text) => {
-					text
-						.setPlaceholder('Folder/name')
-						.setValue(this.plugin.settings.fixedOutputFolder);
-					text.onChange(async (value: string) => {
-						this.plugin.settings.fixedOutputFolder = value;
-						await this.plugin.saveSettings();
-					});
-				});
-		}
-
-		new Setting(containerEl)
-			.setName('Default base files folder')
-			.setDesc('Folder prefilled in the dialog for the .base file.')
-			.addDropdown((dropdown) => {
-				dropdown
-					.addOption('folder', 'Same folder as the active note')
-					.addOption('last', 'Last used')
-					.addOption('fixed', 'Fixed path');
-				dropdown.setValue(this.plugin.settings.baseFolderMode);
-				dropdown.onChange(async (value: string) => {
-					this.plugin.settings.baseFolderMode = value as FolderMode;
-					await this.plugin.saveSettings();
-					this.display();
-				});
-			});
-
-		if (this.plugin.settings.baseFolderMode === 'fixed') {
-			new Setting(containerEl)
-				.setName('Fixed base folder')
-				.setDesc('Used in fixed path mode.')
-				.addText((text) => {
-					text
-						.setPlaceholder('Folder/name')
-						.setValue(this.plugin.settings.fixedBaseFolder);
-					text.onChange(async (value: string) => {
-						this.plugin.settings.fixedBaseFolder = value;
-						await this.plugin.saveSettings();
-					});
-				});
-		}
+	setControlValue(key: string, value: unknown): void {
+		const settings = this.plugin.settings as unknown as Record<
+			string,
+			unknown
+		>;
+		settings[key] = value;
+		void this.plugin.saveSettings();
+		this.refreshDomState();
 	}
 }

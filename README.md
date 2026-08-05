@@ -136,7 +136,7 @@ Basify creates new files but never modifies or deletes existing ones. Still, **m
 - Copy `main.js`, `manifest.json`, `styles.css` to `<Vault>/.obsidian/plugins/basify/`.
 - Enable the plugin in **Settings → Community plugins**.
 
-Requires Obsidian **1.10.0+** (Bases).
+Requires Obsidian **1.13.0+** (Bases).
 
 ## Develop
 
