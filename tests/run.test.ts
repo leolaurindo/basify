@@ -353,6 +353,69 @@ test('dynamic field extraction turns key:value into fields', () => {
 	if (props['start']?.value !== '2026-12-01') throw new Error('start');
 });
 
+test('dynamic extraction preserves complete URL values', () => {
+	const sel = parseSelection(
+		'- project url:https://example.com/a_b~c/*?x=1#section',
+	);
+	if (sel === null) throw new Error('no selection');
+	const input = buildConvertInput(sel, opts({ extractDynamic: true }));
+	const note = input.notes[0];
+	if (
+		note?.properties.url?.value !==
+		'https://example.com/a_b~c/*?x=1#section'
+	) {
+		throw new Error('url: ' + JSON.stringify(note?.properties.url?.value));
+	}
+	if ('tags' in (note?.properties ?? {})) {
+		throw new Error('URL fragment became a tag');
+	}
+	if (note?.name !== 'project') throw new Error('name: ' + note?.name);
+});
+
+test('dynamic extraction preserves URL trailing punctuation', () => {
+	const sel = parseSelection(
+		'- links url:https://example.com/path?; source:ftp://example.com/file!',
+	);
+	if (sel === null) throw new Error('no selection');
+	const input = buildConvertInput(sel, opts({ extractDynamic: true }));
+	const properties = input.notes[0]?.properties ?? {};
+	if (properties.url?.value !== 'https://example.com/path?;') {
+		throw new Error('url punctuation: ' + JSON.stringify(properties.url?.value));
+	}
+	if (properties.source?.value !== 'ftp://example.com/file!') {
+		throw new Error('source punctuation: ' + JSON.stringify(properties.source?.value));
+	}
+});
+
+test('dynamic extraction preserves URL-valued fields beyond url', () => {
+	const sel = parseSelection('- project source:ftp://example.com/file.txt?raw=1');
+	if (sel === null) throw new Error('no selection');
+	const input = buildConvertInput(sel, opts({ extractDynamic: true }));
+	if (
+		input.notes[0]?.properties.source?.value !==
+		'ftp://example.com/file.txt?raw=1'
+	) {
+		throw new Error('source URL');
+	}
+});
+
+test('dynamic extraction preserves a URL in a markdown field link', () => {
+	const sel = parseSelection(
+		'- project url:[repository](https://github.com/example/repo_name#readme)',
+	);
+	if (sel === null) throw new Error('no selection');
+	const input = buildConvertInput(sel, opts({ extractDynamic: true }));
+	if (
+		input.notes[0]?.properties.url?.value !==
+		'https://github.com/example/repo_name#readme'
+	) {
+		throw new Error('markdown URL');
+	}
+	if (input.notes[0]?.name !== 'project') {
+		throw new Error('name: ' + input.notes[0]?.name);
+	}
+});
+
 test('dynamic extraction ignores the tags toggle', () => {
 	const sel = parseSelection('- x #a type: task');
 	if (sel === null) throw new Error('no selection');

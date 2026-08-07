@@ -28,6 +28,9 @@ export interface SelectionBlock {
 }
 
 const LIST_MARKER = /^\s*(?:[-*+]|\d+[.)])\s/;
+const FIELD_MARKDOWN_LINK =
+	/\b([A-Za-z][A-Za-z0-9_-]*)\s*:\s*\[[^\]]*\]\(([^)\s]+)\)/g;
+const URL_VALUE = /\b[A-Za-z][A-Za-z0-9+.-]*:\/\/[^\s<>()]+/g;
 
 export function getSelectionBlock(editor: Editor): SelectionBlock {
 	const selection = editor.getSelection();
@@ -215,8 +218,19 @@ export function isTaskList(selection: Selection): boolean {
 }
 
 function stripMarkdown(text: string): string {
-	return text
+	const urls: string[] = [];
+	const protectedText = text
+		.replace(FIELD_MARKDOWN_LINK, '$1:$2')
+		.replace(URL_VALUE, (url) => {
+			const index = urls.push(url) - 1;
+			return `BASIFYURL${index}TOKEN`;
+		});
+
+	return protectedText
 		.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
 		.replace(/`{1,3}[^`]*`/g, '')
-		.replace(/\*\*|__|\*|_|~/g, '');
+		.replace(/\*\*|__|\*|_|~/g, '')
+		.replace(/BASIFYURL(\d+)TOKEN/g, (_match, index: string) =>
+			urls[Number(index)] ?? '',
+		);
 }
