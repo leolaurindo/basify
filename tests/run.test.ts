@@ -945,6 +945,33 @@ test('merge treats list properties as whole values', async () => {
 	if (!content.includes('tags: ["new"]')) throw new Error('tags not replaced');
 });
 
+test('merge combine turns conflicting scalars into an ordered list', async () => {
+	const { app, vault } = makeApp();
+	vault.store.set('Books/Dune.md', '---\nScore: 1\n---\nBody');
+	const sel = parseSelection('| Name | Score | Added |\n| --- | --- | --- |\n| Dune | 2 | new |');
+	if (sel === null) throw new Error('no table');
+	await createNotes(
+		app as never,
+		buildConvertInput(sel, opts({ columns: ['Name', 'Score', 'Added'] })),
+		'merge-combine',
+	);
+	const content = vault.store.get('Books/Dune.md') ?? '';
+	if (!content.includes('Score: [1,2]')) throw new Error('score list: ' + content);
+	if (!content.includes('Added: "new"')) throw new Error('missing property');
+});
+
+test('merge combine flattens and deduplicates list values', async () => {
+	const { app, vault } = makeApp();
+	vault.store.set('Books/Apple.md', '---\ntags: ["old", "shared"]\n---\nBody');
+	const sel = parseSelection('- Apple #shared #new');
+	if (sel === null) throw new Error('no list');
+	await createNotes(app as never, buildConvertInput(sel, opts()), 'merge-combine');
+	const content = vault.store.get('Books/Apple.md') ?? '';
+	if (!content.includes('tags: ["old","shared","new"]')) {
+		throw new Error('tags list: ' + content);
+	}
+});
+
 test('source cleanup keeps skipped list entries and their children', () => {
 	const source = '- Apple\n  - detail\n- Pear';
 	const sel = parseSelection(source);

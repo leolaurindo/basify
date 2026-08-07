@@ -279,7 +279,8 @@ class BasifyModal extends Modal {
 					.addOption('suffix', 'Create with suffix')
 					.addOption('hash', 'Create with hash suffix')
 					.addOption('merge-new', 'Merge, prefer new properties')
-					.addOption('merge-old', 'Merge, prefer existing properties');
+					.addOption('merge-old', 'Merge, prefer existing properties')
+					.addOption('merge-combine', 'Merge, combine conflicting properties');
 				dropdown.setValue(this.conflictMode);
 				dropdown.onChange((value: string) => {
 					this.conflictMode = isConflictMode(value) ? value : 'skip';
@@ -460,5 +461,12 @@ class BasifyModal extends Modal {
 }
 
 function isConflictMode(value: string): value is ConflictMode {
-	return ['skip', 'suffix', 'hash', 'merge-new', 'merge-old'].includes(value);
+	return [
+		'skip',
+		'suffix',
+		'hash',
+		'merge-new',
+		'merge-old',
+		'merge-combine',
+	].includes(value);
 }
