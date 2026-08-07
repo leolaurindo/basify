@@ -34,7 +34,14 @@ export function getSelectionBlock(editor: Editor): SelectionBlock {
 	const from = editor.getCursor('from');
 	const to = editor.getCursor('to');
 	if (selection.trim() !== '') {
-		return { text: selection, from, to };
+		const endLine = to.ch === 0 && to.line > from.line ? to.line - 1 : to.line;
+		const blockFrom = { line: from.line, ch: 0 };
+		const blockTo = { line: endLine, ch: editor.getLine(endLine).length };
+		return {
+			text: editor.getRange(blockFrom, blockTo),
+			from: blockFrom,
+			to: blockTo,
+		};
 	}
 
 	const cursor = editor.getCursor();

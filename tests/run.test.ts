@@ -840,4 +840,45 @@ test('getSelectionBlock expands around the cursor', () => {
 	if (block.from.line !== 1 || block.to.line !== 2) throw new Error('range');
 });
 
+test('getSelectionBlock expands a partial selection to complete lines', () => {
+	const lines = ['before', '- lista', '- listas', '- lista', 'after'];
+	const fakeEditor = {
+		getSelection: () => 'lista\n- listas\n- list',
+		getCursor: (which: string) =>
+			which === 'from' ? { line: 1, ch: 2 } : { line: 3, ch: 6 },
+		getLine: (line: number) => lines[line] ?? '',
+		getRange: (from: { line: number; ch: number }, to: { line: number; ch: number }) =>
+			lines
+				.slice(from.line, to.line + 1)
+				.map((line, index) =>
+					index === 0
+						? line.slice(from.ch, from.line === to.line ? to.ch : undefined)
+						: index === to.line - from.line
+							? line.slice(0, to.ch)
+							: line,
+				)
+				.join('\n'),
+	};
+	const block = getSelectionBlock(fakeEditor as never);
+	if (block.text !== '- lista\n- listas\n- lista') {
+		throw new Error('text: ' + block.text);
+	}
+	if (block.from.ch !== 0 || block.to.ch !== 7) throw new Error('range');
+});
+
+test('getSelectionBlock excludes a following line selected only at column zero', () => {
+	const lines = ['- A', '- B', 'not selected'];
+	const fakeEditor = {
+		getSelection: () => '- A\n- B\n',
+		getCursor: (which: string) =>
+			which === 'from' ? { line: 0, ch: 0 } : { line: 2, ch: 0 },
+		getLine: (line: number) => lines[line] ?? '',
+		getRange: (from: { line: number }, to: { line: number }) =>
+			lines.slice(from.line, to.line + 1).join('\n'),
+	};
+	const block = getSelectionBlock(fakeEditor as never);
+	if (block.text !== '- A\n- B') throw new Error('text: ' + block.text);
+	if (block.to.line !== 1) throw new Error('included following line');
+});
+
 void run();
