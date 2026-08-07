@@ -38,7 +38,7 @@ export interface NoteSpec {
 }
 
 export type ConflictMode = 'skip' | 'suffix' | 'merge-new' | 'merge-old';
-export type ConflictModeValue = ConflictMode | 'hash';
+export type ConflictModeValue = ConflictMode | 'hash' | 'merge-combine';
 
 export type RepeatedFieldMode =
 	| 'list'
@@ -278,16 +278,26 @@ export async function createNotes(
 
 		if (
 			existing instanceof TFile &&
-			(conflictMode === 'merge-new' || conflictMode === 'merge-old')
+			(conflictMode === 'merge-new' ||
+				conflictMode === 'merge-old' ||
+				conflictMode === 'merge-combine')
 		) {
 			await app.fileManager.processFrontMatter(existing, (frontmatter) => {
 				const existingProperties = frontmatter as Record<string, unknown>;
 				for (const [key, property] of Object.entries(note.properties)) {
-					if (
-						conflictMode === 'merge-new' ||
-						existingProperties[key] === undefined
+					const incomingValue = typedValue(property.value);
+					if (existingProperties[key] === undefined) {
+						existingProperties[key] = incomingValue;
+					} else if (conflictMode === 'merge-new') {
+						existingProperties[key] = incomingValue;
+					} else if (
+						conflictMode === 'merge-combine' &&
+						!samePropertyValue(existingProperties[key], incomingValue)
 					) {
-						existingProperties[key] = typedValue(property.value);
+						existingProperties[key] = combinePropertyValues(
+							existingProperties[key],
+							incomingValue,
+						);
 					}
 				}
 			});
@@ -339,6 +349,29 @@ export function shortHash(value: string): string {
 		hash = Math.imul(hash, 16777619);
 	}
 	return (hash >>> 0).toString(16).padStart(8, '0');
+}
+
+function samePropertyValue(left: unknown, right: unknown): boolean {
+	if (Array.isArray(left) || Array.isArray(right)) {
+		const leftValues = propertyValues(left);
+		const rightValues = propertyValues(right);
+		return (
+			leftValues.length === rightValues.length &&
+			leftValues.every((value, index) => Object.is(value, rightValues[index]))
+		);
+	}
+	return Object.is(left, right);
+}
+
+function combinePropertyValues(left: unknown, right: unknown): unknown[] {
+	const values = [...propertyValues(left), ...propertyValues(right)];
+	return values.filter(
+		(value, index) => values.findIndex((candidate) => Object.is(candidate, value)) === index,
+	);
+}
+
+function propertyValues(value: unknown): unknown[] {
+	return Array.isArray(value) ? (value as unknown[]) : [value];
 }
 
 export function buildBaseContent(input: ConvertInput): string {
