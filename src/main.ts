@@ -82,6 +82,10 @@ export default class BasifyPlugin extends Plugin {
 				sourceMode: this.memory.lastSourceMode,
 				conflictMode: this.memory.lastConflictMode,
 				conflictSuffix: this.memory.lastConflictSuffix,
+				repeatedFieldMode: this.memory.lastRepeatedFieldMode,
+				longFilenameMode: this.memory.lastLongFilenameMode,
+				maxFilenameLength: this.memory.lastMaxFilenameLength,
+				advancedOptions: this.memory.lastAdvancedOptions,
 			},
 		});
 		if (options === null) {
@@ -107,6 +111,10 @@ export default class BasifyPlugin extends Plugin {
 			lastSourceMode: options.sourceMode,
 			lastConflictMode: options.conflictMode,
 			lastConflictSuffix: options.conflictSuffix,
+			lastRepeatedFieldMode: options.repeatedFieldMode ?? 'list',
+			lastLongFilenameMode: options.longFilenameMode ?? 'shorten',
+			lastMaxFilenameLength: options.maxFilenameLength ?? 120,
+			lastAdvancedOptions: options.advancedOptions ?? false,
 		};
 		await this.saveSettings();
 
