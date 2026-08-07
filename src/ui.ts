@@ -1,5 +1,6 @@
 import { App, DropdownComponent, Modal, Setting, TextComponent } from 'obsidian';
 import { BasifyOptions, ConflictMode } from './convert';
+import { FolderSuggest } from './folder-suggest';
 
 export interface BasifyPrompt {
 	columns: string[];
@@ -28,6 +29,8 @@ class BasifyModal extends Modal {
 	private readonly initial: Partial<BasifyOptions>;
 	private readonly resolve: (options: BasifyOptions | null) => void;
 	private folderText!: TextComponent;
+	private outputFolderSuggest: FolderSuggest | null = null;
+	private baseFolderSuggest: FolderSuggest | null = null;
 	private nameColumn = 0;
 	private mode: 'file' | 'codeblock' | 'none';
 	private statusField: string;
@@ -98,6 +101,10 @@ class BasifyModal extends Modal {
 				text
 					.setPlaceholder('Folder/name')
 					.setValue(this.defaultFolder);
+				this.outputFolderSuggest = new FolderSuggest(
+					this.app,
+					text.inputEl,
+				);
 			});
 
 		new Setting(this.contentEl)
@@ -335,6 +342,8 @@ class BasifyModal extends Modal {
 		if (container === null) {
 			return;
 		}
+		this.baseFolderSuggest?.close();
+		this.baseFolderSuggest = null;
 		container.empty();
 		if (this.mode !== 'file') {
 			return;
@@ -347,6 +356,13 @@ class BasifyModal extends Modal {
 				text.onChange((value: string) => {
 					this.baseFolder = value.trim();
 				});
+				this.baseFolderSuggest = new FolderSuggest(
+					this.app,
+					text.inputEl,
+					(path) => {
+						this.baseFolder = path;
+					},
+				);
 			});
 		new Setting(container)
 			.setName('Embed base file in this note')
@@ -402,6 +418,8 @@ class BasifyModal extends Modal {
 	}
 
 	onClose(): void {
+		this.outputFolderSuggest?.close();
+		this.baseFolderSuggest?.close();
 		if (!this.settled) {
 			this.settled = true;
 			this.resolve(null);
