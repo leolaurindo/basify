@@ -38,6 +38,7 @@ export interface NoteSpec {
 }
 
 export type ConflictMode = 'skip' | 'suffix' | 'merge-new' | 'merge-old';
+export type ConflictModeValue = ConflictMode | 'hash';
 
 export type RepeatedFieldMode =
 	| 'list'
@@ -211,7 +212,7 @@ export function buildConvertInput(
 export async function createNotes(
 	app: App,
 	input: ConvertInput,
-	conflictMode: ConflictMode = 'suffix',
+	conflictMode: ConflictModeValue = 'suffix',
 	conflictSuffix = '',
 	longFilenameMode: LongFilenameMode = 'shorten',
 	maxFilenameLength?: number,
@@ -253,6 +254,21 @@ export async function createNotes(
 				app.vault,
 				input.folder,
 				suffixedName,
+				'md',
+			);
+			await app.vault.create(available, buildNoteContent(note));
+			results.push({ sourceLine: note.sourceLine, status: 'created', shortened });
+			continue;
+		}
+
+		if (conflictMode === 'hash') {
+			const hashedName = cleanName(
+				`${note.name} ${shortHash(originalNote.name)}`,
+			);
+			const available = availablePath(
+				app.vault,
+				input.folder,
+				hashedName,
 				'md',
 			);
 			await app.vault.create(available, buildNoteContent(note));
@@ -314,6 +330,15 @@ export function shortenFilename(name: string, maxLength: number): string {
 	const prefix =
 		boundary > 0 ? prefixCandidate.slice(0, boundary).trimEnd() : prefixCandidate;
 	return `${prefix}...${lastWord}`;
+}
+
+export function shortHash(value: string): string {
+	let hash = 2166136261;
+	for (let index = 0; index < value.length; index++) {
+		hash ^= value.charCodeAt(index);
+		hash = Math.imul(hash, 16777619);
+	}
+	return (hash >>> 0).toString(16).padStart(8, '0');
 }
 
 export function buildBaseContent(input: ConvertInput): string {
