@@ -19,6 +19,8 @@ import {
 	buildConvertInput,
 	createBaseFile,
 	createNotes,
+	LongFilenameError,
+	shortenFilename,
 } from '../src/convert';
 
 class FakeVault extends Vault {
@@ -758,6 +760,72 @@ test('invalid filename characters are removed', () => {
 	if (sel === null) throw new Error('no selection');
 	const input = buildConvertInput(sel, opts({ folder: 'f' }));
 	if (input.notes[0]?.name !== 'A B C note') throw new Error('name: ' + input.notes[0]?.name);
+});
+
+test('shortened filenames preserve the beginning and last word', () => {
+	const name = shortenFilename(
+		'experiment ts2vec tcn and lstm on electricity demand datasets',
+		30,
+	);
+	if (name.length > 30) throw new Error('too long: ' + name);
+	if (!name.startsWith('experiment ts2vec')) throw new Error('beginning: ' + name);
+	if (!name.endsWith('datasets')) throw new Error('last word: ' + name);
+	if (!name.includes('...')) throw new Error('ellipsis: ' + name);
+});
+
+test('long filenames are shortened before note creation', async () => {
+	const { app, vault } = makeApp();
+	const sel = parseSelection('- alpha beta gamma delta epsilon zeta');
+	if (sel === null) throw new Error('no selection');
+	const results = await createNotes(
+		app as never,
+		buildConvertInput(sel, opts({ folder: 'Long' })),
+		'skip',
+		'',
+		'shorten',
+		20,
+	);
+	const path = [...vault.store.keys()].find((key) => key.startsWith('Long/'));
+	if (path === undefined || path.length > 'Long/'.length + 20 + 3) {
+		throw new Error('path: ' + path);
+	}
+	if (results[0]?.shortened !== true) throw new Error('not marked shortened');
+});
+
+test('long filenames can be skipped', async () => {
+	const { app, vault } = makeApp();
+	const sel = parseSelection('- alpha beta gamma');
+	if (sel === null) throw new Error('no selection');
+	const results = await createNotes(
+		app as never,
+		buildConvertInput(sel, opts()),
+		'skip',
+		'',
+		'skip',
+		10,
+	);
+	if (results[0]?.status !== 'skipped') throw new Error('not skipped');
+	if (vault.store.has('alpha beta gamma.md')) throw new Error('created');
+});
+
+test('long filenames can cancel before creating files', async () => {
+	const { app, vault } = makeApp();
+	const sel = parseSelection('- alpha beta gamma');
+	if (sel === null) throw new Error('no selection');
+	try {
+		await createNotes(
+			app as never,
+			buildConvertInput(sel, opts()),
+			'skip',
+			'',
+			'cancel',
+			10,
+		);
+		throw new Error('did not cancel');
+	} catch (error) {
+		if (!(error instanceof LongFilenameError)) throw error;
+	}
+	if (vault.store.size !== 0) throw new Error('created before cancellation');
 });
 
 test('duplicate names are deduped', async () => {

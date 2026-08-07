@@ -4,6 +4,7 @@ import {
 	buildConvertInput,
 	createBaseFile,
 	createNotes,
+	LongFilenameError,
 } from './convert';
 import {
 	getSelectionBlock,
@@ -116,6 +117,8 @@ export default class BasifyPlugin extends Plugin {
 				input,
 				options.conflictMode,
 				options.conflictSuffix,
+				options.longFilenameMode,
+				options.maxFilenameLength,
 			);
 			let generated = '';
 			let baseFile: TFile | null = null;
@@ -160,10 +163,17 @@ export default class BasifyPlugin extends Plugin {
 				(result) => result.status === 'merged',
 			).length;
 			const skipped = results.length - created - merged;
+			const shortened = results.filter((result) => result.shortened).length;
 			new Notice(
-				`Basify: ${created} created, ${merged} merged, ${skipped} skipped.`,
+				`Basify: ${created} created, ${merged} merged, ${skipped} skipped.${
+					shortened > 0 ? ` ${shortened} filenames shortened.` : ''
+				}`,
 			);
 		} catch (error) {
+			if (error instanceof LongFilenameError) {
+				new Notice(`Basify cancelled: ${error.message}`);
+				return;
+			}
 			const message =
 				error instanceof Error ? error.message : String(error);
 			new Notice(`Basify failed: ${message}`);
