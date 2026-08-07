@@ -22,6 +22,8 @@ export interface BasifyOptions {
 	conflictMode: ConflictMode;
 	conflictSuffix: string;
 	repeatedFieldMode?: RepeatedFieldMode;
+	longFilenameMode?: LongFilenameMode;
+	maxFilenameLength?: number;
 }
 
 export interface PropertySpec {
@@ -43,9 +45,26 @@ export type RepeatedFieldMode =
 	| 'first'
 	| 'last';
 
+export type LongFilenameMode = 'shorten' | 'skip' | 'cancel';
+
+export const DEFAULT_MAX_FILENAME_LENGTH = 120;
+
+export class LongFilenameError extends Error {
+	readonly count: number;
+
+	constructor(count: number, maxLength: number) {
+		super(
+			`${count} filename${count === 1 ? '' : 's'} exceed${count === 1 ? 's' : ''} the ${maxLength}-character limit.`,
+		);
+		this.name = 'LongFilenameError';
+		this.count = count;
+	}
+}
+
 export interface NoteResult {
 	sourceLine: number;
 	status: 'created' | 'merged' | 'skipped';
+	shortened?: boolean;
 }
 
 export interface ConvertInput {
@@ -194,16 +213,34 @@ export async function createNotes(
 	input: ConvertInput,
 	conflictMode: ConflictMode = 'suffix',
 	conflictSuffix = '',
+	longFilenameMode: LongFilenameMode = 'shorten',
+	maxFilenameLength?: number,
 ): Promise<NoteResult[]> {
+	const filenameLength = normalizeFilenameLength(maxFilenameLength);
+	const longNotes = input.notes.filter(
+		(note) => note.name.length > filenameLength,
+	);
+	if (longFilenameMode === 'cancel' && longNotes.length > 0) {
+		throw new LongFilenameError(longNotes.length, filenameLength);
+	}
 	await ensureFolder(app.vault, input.folder);
 	const results: NoteResult[] = [];
 
-	for (const note of input.notes) {
+	for (const originalNote of input.notes) {
+		const isLong = originalNote.name.length > filenameLength;
+		if (isLong && longFilenameMode === 'skip') {
+			results.push({ sourceLine: originalNote.sourceLine, status: 'skipped' });
+			continue;
+		}
+		const shortened = isLong;
+		const note = isLong
+			? { ...originalNote, name: shortenFilename(originalNote.name, filenameLength) }
+			: originalNote;
 		const path = joinPath(input.folder, note.name, 'md');
 		const existing = app.vault.getAbstractFileByPath(path);
 		if (existing === null) {
 			await app.vault.create(path, buildNoteContent(note));
-			results.push({ sourceLine: note.sourceLine, status: 'created' });
+			results.push({ sourceLine: note.sourceLine, status: 'created', shortened });
 			continue;
 		}
 
@@ -219,7 +256,7 @@ export async function createNotes(
 				'md',
 			);
 			await app.vault.create(available, buildNoteContent(note));
-			results.push({ sourceLine: note.sourceLine, status: 'created' });
+			results.push({ sourceLine: note.sourceLine, status: 'created', shortened });
 			continue;
 		}
 
@@ -238,7 +275,7 @@ export async function createNotes(
 					}
 				}
 			});
-			results.push({ sourceLine: note.sourceLine, status: 'merged' });
+			results.push({ sourceLine: note.sourceLine, status: 'merged', shortened });
 			continue;
 		}
 
@@ -246,6 +283,37 @@ export async function createNotes(
 	}
 
 	return results;
+}
+
+function normalizeFilenameLength(length: number | undefined): number {
+	return Number.isInteger(length) && (length as number) > 3
+		? (length as number)
+		: DEFAULT_MAX_FILENAME_LENGTH;
+}
+
+export function shortenFilename(name: string, maxLength: number): string {
+	if (name.length <= maxLength) {
+		return name;
+	}
+	if (maxLength <= 3) {
+		return name.slice(0, maxLength);
+	}
+
+	const lastWordMatch = name.match(/\S+$/);
+	const lastWord = lastWordMatch?.[0] ?? '';
+	const prefixLimit = maxLength - 3 - lastWord.length;
+	if (lastWord === '' || prefixLimit <= 0) {
+		const available = maxLength - 3;
+		const prefixLength = Math.max(1, Math.floor(available / 2));
+		const suffixLength = available - prefixLength;
+		return `${name.slice(0, prefixLength)}...${name.slice(-suffixLength)}`;
+	}
+
+	const prefixCandidate = name.slice(0, prefixLimit).trimEnd();
+	const boundary = prefixCandidate.lastIndexOf(' ');
+	const prefix =
+		boundary > 0 ? prefixCandidate.slice(0, boundary).trimEnd() : prefixCandidate;
+	return `${prefix}...${lastWord}`;
 }
 
 export function buildBaseContent(input: ConvertInput): string {
