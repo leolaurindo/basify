@@ -11,15 +11,8 @@ export class FolderSuggest extends AbstractInputSuggest<TFolder> {
 
 	protected getSuggestions(query: string): TFolder[] {
 		const search = query.trim().toLowerCase();
-		return [
-			this.app.vault.getRoot(),
-			...this.app.vault
-				.getAllLoadedFiles()
-				.filter(
-					(file): file is TFolder =>
-						file instanceof TFolder && !file.isRoot(),
-				),
-		]
+		return this.app.vault
+			.getAllFolders(true)
 			.filter((folder) => this.label(folder).toLowerCase().includes(search))
 			.sort((a, b) => {
 				if (a.isRoot()) return -1;
