@@ -6,12 +6,14 @@ export interface TableSelection {
 	type: 'table';
 	columns: string[];
 	rows: Record<string, string>[];
+	rowLines: number[];
 	hasHeader: boolean;
 }
 
 export interface ListItem {
 	text: string;
 	done: boolean | null;
+	line: number;
 }
 
 export interface ListSelection {
@@ -66,19 +68,24 @@ export function parseSelection(text: string): Selection | null {
 	const lines = text.split(/\r?\n/);
 	const firstLine = lines.find((line) => line.trim() !== '') ?? '';
 	if (/^\s*\|/.test(firstLine)) {
-		return parseTable(lines.filter((line) => /^\s*\|/.test(line)));
+		return parseTable(
+			lines
+				.map((text, line) => ({ text, line }))
+				.filter(({ text }) => /^\s*\|/.test(text)),
+		);
 	}
 	return parseList(lines);
 }
 
-function parseTable(lines: string[]): TableSelection | null {
-	const hasSeparator = lines.length >= 2 && isSeparatorRow(lines[1] ?? '');
+function parseTable(lines: Array<{ text: string; line: number }>): TableSelection | null {
+	const hasSeparator =
+		lines.length >= 2 && isSeparatorRow(lines[1]?.text ?? '');
 	const headerLine: string | null = hasSeparator
-		? lines[0] ?? ''
+		? lines[0]?.text ?? ''
 		: null;
 	const dataLines = hasSeparator ? lines.slice(2) : lines;
 
-	const sampleRow = parseRow(headerLine ?? (dataLines[0] ?? ''));
+	const sampleRow = parseRow(headerLine ?? (dataLines[0]?.text ?? ''));
 	if (sampleRow.length === 0) {
 		return null;
 	}
@@ -89,8 +96,9 @@ function parseTable(lines: string[]): TableSelection | null {
 			: sampleRow.map((_cell, index) => `Column ${index + 1}`);
 
 	const rows: Record<string, string>[] = [];
-	for (const line of dataLines) {
-		const cells = parseRow(line);
+	const rowLines: number[] = [];
+	for (const { text, line } of dataLines) {
+		const cells = parseRow(text);
 		if (cells.length === 0) {
 			continue;
 		}
@@ -99,9 +107,10 @@ function parseTable(lines: string[]): TableSelection | null {
 			row[column] = cells[index] ?? '';
 		});
 		rows.push(row);
+		rowLines.push(line);
 	}
 
-	return { type: 'table', columns, rows, hasHeader: hasSeparator };
+	return { type: 'table', columns, rows, rowLines, hasHeader: hasSeparator };
 }
 
 function isSeparatorRow(line: string): boolean {
@@ -125,7 +134,7 @@ function parseList(lines: string[]): ListSelection | null {
 	let baseIndent: string | null = null;
 	const items: ListItem[] = [];
 
-	for (const line of lines) {
+	for (const [lineNumber, line] of lines.entries()) {
 		const taskMatch = line.match(task);
 		const match = taskMatch ?? line.match(plain);
 		if (match === null) {
@@ -143,16 +152,51 @@ function parseList(lines: string[]): ListSelection | null {
 			items.push({
 				text: stripMarkdown(taskMatch[3] ?? '').trim(),
 				done: checked,
+				line: lineNumber,
 			});
 		} else {
 			items.push({
 				text: stripMarkdown(match[2] ?? '').trim(),
 				done: null,
+				line: lineNumber,
 			});
 		}
 	}
 
 	return items.length > 0 ? { type: 'list', items } : null;
+}
+
+export function removeSelectionEntries(
+	text: string,
+	selection: Selection,
+	removedLines: Set<number>,
+): string {
+	if (removedLines.size === 0) {
+		return text;
+	}
+
+	const lines = text.split(/\r?\n/);
+	if (selection.type === 'table') {
+		if (selection.rowLines.every((line) => removedLines.has(line))) {
+			return '';
+		}
+		return lines.filter((_line, index) => !removedLines.has(index)).join('\n');
+	}
+
+	if (selection.items.every((item) => removedLines.has(item.line))) {
+		return '';
+	}
+
+	const itemLines = new Set(selection.items.map((item) => item.line));
+	let removeGroup = false;
+	return lines
+		.filter((_line, index) => {
+			if (itemLines.has(index)) {
+				removeGroup = removedLines.has(index);
+			}
+			return !removeGroup;
+		})
+		.join('\n');
 }
 
 export function isTaskList(selection: Selection): boolean {

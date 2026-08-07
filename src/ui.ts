@@ -1,5 +1,5 @@
 import { App, DropdownComponent, Modal, Setting, TextComponent } from 'obsidian';
-import { BasifyOptions } from './convert';
+import { BasifyOptions, ConflictMode } from './convert';
 
 export interface BasifyPrompt {
 	columns: string[];
@@ -29,7 +29,7 @@ class BasifyModal extends Modal {
 	private readonly resolve: (options: BasifyOptions | null) => void;
 	private folderText!: TextComponent;
 	private nameColumn = 0;
-	private mode: 'file' | 'codeblock';
+	private mode: 'file' | 'codeblock' | 'none';
 	private statusField: string;
 	private baseFolder: string;
 	private embedBase: boolean;
@@ -42,9 +42,13 @@ class BasifyModal extends Modal {
 	private lowercaseNames: boolean;
 	private lowercaseNameField: boolean;
 	private lowercaseYamlFields: boolean;
+	private sourceMode: 'keep' | 'converted' | 'all';
+	private conflictMode: ConflictMode;
+	private conflictSuffix: string;
 	private fieldsContainer: HTMLElement | null = null;
 	private nameFieldOptionsContainer: HTMLElement | null = null;
 	private modeOptionsContainer: HTMLElement | null = null;
+	private conflictOptionsContainer: HTMLElement | null = null;
 	private settled = false;
 
 	constructor(
@@ -71,6 +75,9 @@ class BasifyModal extends Modal {
 		this.lowercaseNames = prompt.initial?.lowercaseNames ?? false;
 		this.lowercaseNameField = prompt.initial?.lowercaseNameField ?? false;
 		this.lowercaseYamlFields = prompt.initial?.lowercaseYamlFields ?? false;
+		this.sourceMode = prompt.initial?.sourceMode ?? 'converted';
+		this.conflictMode = prompt.initial?.conflictMode ?? 'skip';
+		this.conflictSuffix = prompt.initial?.conflictSuffix ?? 'copy';
 		this.initial = prompt.initial ?? {};
 		this.resolve = resolve;
 	}
@@ -91,16 +98,6 @@ class BasifyModal extends Modal {
 				text
 					.setPlaceholder('Folder/name')
 					.setValue(this.defaultFolder);
-			});
-
-		new Setting(this.contentEl)
-			.setName('Base files folder')
-			.setDesc('Folder where the .base file is created.')
-			.addText((text) => {
-				text.setValue(this.baseFolder);
-				text.onChange((value: string) => {
-					this.baseFolder = value.trim();
-				});
 			});
 
 		new Setting(this.contentEl)
@@ -236,9 +233,11 @@ class BasifyModal extends Modal {
 			.addDropdown((dropdown: DropdownComponent) => {
 				dropdown.addOption('file', '.base file');
 				dropdown.addOption('codeblock', 'Embed in this note');
+				dropdown.addOption('none', "Don't create a base");
 				dropdown.setValue(this.mode);
 				dropdown.onChange((value: string) => {
-					this.mode = value === 'codeblock' ? 'codeblock' : 'file';
+					this.mode =
+						value === 'codeblock' || value === 'none' ? value : 'file';
 					this.renderModeOptions();
 				});
 			});
@@ -247,6 +246,43 @@ class BasifyModal extends Modal {
 			cls: 'basify-mode-options',
 		});
 		this.renderModeOptions();
+
+		new Setting(this.contentEl)
+			.setName('Source entries')
+			.setDesc(
+				'Remove converted keeps skipped conflicts; remove all also removes them.',
+			)
+			.addDropdown((dropdown: DropdownComponent) => {
+				dropdown
+					.addOption('keep', 'Keep all entries')
+					.addOption('converted', 'Remove converted entries')
+					.addOption('all', 'Remove all entries');
+				dropdown.setValue(this.sourceMode);
+				dropdown.onChange((value: string) => {
+					this.sourceMode =
+						value === 'keep' || value === 'all' ? value : 'converted';
+				});
+			});
+
+		new Setting(this.contentEl)
+			.setName('If a note already exists')
+			.addDropdown((dropdown: DropdownComponent) => {
+				dropdown
+					.addOption('skip', 'Skip')
+					.addOption('suffix', 'Create with suffix')
+					.addOption('merge-new', 'Merge, prefer new properties')
+					.addOption('merge-old', 'Merge, prefer existing properties');
+				dropdown.setValue(this.conflictMode);
+				dropdown.onChange((value: string) => {
+					this.conflictMode = isConflictMode(value) ? value : 'skip';
+					this.renderConflictOptions();
+				});
+			});
+
+		this.conflictOptionsContainer = this.contentEl.createDiv({
+			cls: 'basify-conflict-options',
+		});
+		this.renderConflictOptions();
 
 		const footer = this.contentEl.createDiv({ cls: 'basify-footer' });
 		footer
@@ -304,12 +340,41 @@ class BasifyModal extends Modal {
 			return;
 		}
 		new Setting(container)
+			.setName('Base files folder')
+			.setDesc('Folder where the .base file is created.')
+			.addText((text) => {
+				text.setValue(this.baseFolder);
+				text.onChange((value: string) => {
+					this.baseFolder = value.trim();
+				});
+			});
+		new Setting(container)
 			.setName('Embed base file in this note')
 			.setDesc('Insert a link to the base file at the selection.')
 			.addToggle((toggle) => {
 				toggle.setValue(this.embedBase);
 				toggle.onChange((value: boolean) => {
 					this.embedBase = value;
+				});
+			});
+	}
+
+	private renderConflictOptions(): void {
+		const container = this.conflictOptionsContainer;
+		if (container === null) {
+			return;
+		}
+		container.empty();
+		if (this.conflictMode !== 'suffix') {
+			return;
+		}
+		new Setting(container)
+			.setName('Conflict suffix')
+			.setDesc('Added after the note name. Further conflicts are numbered.')
+			.addText((text) => {
+				text.setPlaceholder('Copy').setValue(this.conflictSuffix);
+				text.onChange((value: string) => {
+					this.conflictSuffix = value.trim();
 				});
 			});
 	}
@@ -367,7 +432,14 @@ class BasifyModal extends Modal {
 			lowercaseNames: this.lowercaseNames,
 			lowercaseNameField: this.lowercaseNameField,
 			lowercaseYamlFields: this.lowercaseYamlFields,
+			sourceMode: this.sourceMode,
+			conflictMode: this.conflictMode,
+			conflictSuffix: this.conflictSuffix,
 		});
 		this.close();
 	}
+}
+
+function isConflictMode(value: string): value is ConflictMode {
+	return ['skip', 'suffix', 'merge-new', 'merge-old'].includes(value);
 }

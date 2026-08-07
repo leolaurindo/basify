@@ -3,6 +3,14 @@ export class Plugin {}
 export class App {
 	vault!: Vault;
 	workspace!: Workspace;
+	fileManager!: FileManager;
+}
+
+export class FileManager {
+	async processFrontMatter(
+		_file: TFile,
+		_callback: (frontmatter: Record<string, unknown>) => void,
+	): Promise<void> {}
 }
 
 export class Vault {}

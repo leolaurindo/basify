@@ -1,4 +1,4 @@
-import { Editor, MarkdownView, Notice, Plugin } from 'obsidian';
+import { Editor, MarkdownView, Notice, Plugin, TFile } from 'obsidian';
 import {
 	buildBaseContent,
 	buildConvertInput,
@@ -9,6 +9,7 @@ import {
 	getSelectionBlock,
 	isTaskList,
 	parseSelection,
+	removeSelectionEntries,
 } from './selection';
 import {
 	BasifyMemory,
@@ -77,6 +78,9 @@ export default class BasifyPlugin extends Plugin {
 				lowercaseNames: this.memory.lastLowercaseNames,
 				lowercaseNameField: this.memory.lastLowercaseNameField,
 				lowercaseYamlFields: this.memory.lastLowercaseYamlFields,
+				sourceMode: this.memory.lastSourceMode,
+				conflictMode: this.memory.lastConflictMode,
+				conflictSuffix: this.memory.lastConflictSuffix,
 			},
 		});
 		if (options === null) {
@@ -99,39 +103,66 @@ export default class BasifyPlugin extends Plugin {
 			lastLowercaseNames: options.lowercaseNames,
 			lastLowercaseNameField: options.lowercaseNameField,
 			lastLowercaseYamlFields: options.lowercaseYamlFields,
+			lastSourceMode: options.sourceMode,
+			lastConflictMode: options.conflictMode,
+			lastConflictSuffix: options.conflictSuffix,
 		};
 		await this.saveSettings();
 
 		try {
 			const input = buildConvertInput(selection, options);
-			await createNotes(this.app, input);
+			const results = await createNotes(
+				this.app,
+				input,
+				options.conflictMode,
+				options.conflictSuffix,
+			);
+			let generated = '';
+			let baseFile: TFile | null = null;
 
 			if (options.mode === 'codeblock') {
-				editor.setSelection(block.from, block.to);
-				editor.replaceSelection(
-					`\n\`\`\`base\n${buildBaseContent(input)}\`\`\`\n`,
-				);
-				new Notice('Created notes and embedded the base in this note.');
-			} else {
-				const baseFile = await createBaseFile(
+				generated = `\`\`\`base\n${buildBaseContent(input)}\`\`\``;
+			} else if (options.mode === 'file') {
+				baseFile = await createBaseFile(
 					this.app,
 					options.baseFolder,
 					input.folder,
 					buildBaseContent(input),
 				);
 				if (options.embedBase) {
-					editor.setSelection(block.from, block.to);
-					editor.replaceSelection(`\n![[${baseFile.name}]]\n`);
-					new Notice('Created notes and linked the base in this note.');
-				} else {
-					await this.app.workspace.getLeaf(true).openFile(baseFile);
-					const message =
-						input.folder === ''
-							? 'Created a base in the vault root.'
-							: `Created a base in ${input.folder}.`;
-					new Notice(message);
+					generated = `![[${baseFile.name}]]`;
 				}
 			}
+
+			const removedLines = new Set(
+				results
+					.filter((result) => result.status !== 'skipped')
+					.map((result) => result.sourceLine),
+			);
+			const source =
+				options.sourceMode === 'keep'
+					? block.text
+					: options.sourceMode === 'all'
+						? ''
+						: removeSelectionEntries(block.text, selection, removedLines);
+			if (source !== block.text || generated !== '') {
+				editor.setSelection(block.from, block.to);
+				editor.replaceSelection(joinSourceAndGenerated(source, generated));
+			}
+
+			if (baseFile !== null && !options.embedBase) {
+				await this.app.workspace.getLeaf(true).openFile(baseFile);
+			}
+			const created = results.filter(
+				(result) => result.status === 'created',
+			).length;
+			const merged = results.filter(
+				(result) => result.status === 'merged',
+			).length;
+			const skipped = results.length - created - merged;
+			new Notice(
+				`Basify: ${created} created, ${merged} merged, ${skipped} skipped.`,
+			);
 		} catch (error) {
 			const message =
 				error instanceof Error ? error.message : String(error);
@@ -174,4 +205,14 @@ export default class BasifyPlugin extends Plugin {
 		const file = this.app.workspace.getActiveViewOfType(MarkdownView)?.file;
 		return file?.parent?.path ?? '';
 	}
+}
+
+function joinSourceAndGenerated(source: string, generated: string): string {
+	if (generated === '') {
+		return source;
+	}
+	if (source === '') {
+		return `${generated}\n`;
+	}
+	return `${source}\n\n${generated}\n`;
 }

@@ -1,4 +1,5 @@
-.basify-mode-options {
+.basify-mode-options,
+.basify-conflict-options {
 	margin-left: 1.5em;
 	padding-left: 1em;
 	border-left: 2px solid var(--background-modifier-border);

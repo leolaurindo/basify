@@ -1,8 +1,17 @@
-import { App, TFolder, TFile, Vault, Workspace, WorkspaceLeaf } from './obsidian-stub';
+import {
+	App,
+	FileManager,
+	TFolder,
+	TFile,
+	Vault,
+	Workspace,
+	WorkspaceLeaf,
+} from './obsidian-stub';
 import {
 	getSelectionBlock,
 	isTaskList,
 	parseSelection,
+	removeSelectionEntries,
 } from '../src/selection';
 import {
 	BasifyOptions,
@@ -49,6 +58,40 @@ class FakeLeaf extends WorkspaceLeaf {
 	async openFile(): Promise<void> {}
 }
 
+class FakeFileManager extends FileManager {
+	constructor(private readonly vault: FakeVault) {
+		super();
+	}
+
+	async processFrontMatter(
+		file: TFile,
+		callback: (frontmatter: Record<string, unknown>) => void,
+	): Promise<void> {
+		const content = this.vault.store.get(file.path) ?? '';
+		const match = content.match(/^---\n([\s\S]*?)\n---\n?/);
+		const frontmatter: Record<string, unknown> = {};
+		for (const line of (match?.[1] ?? '').split('\n')) {
+			const separator = line.indexOf(':');
+			if (separator < 0) continue;
+			const key = line.slice(0, separator);
+			const raw = line.slice(separator + 1).trim();
+			try {
+				frontmatter[key] = JSON.parse(raw);
+			} catch {
+				frontmatter[key] = raw;
+			}
+		}
+		callback(frontmatter);
+		const yaml = Object.entries(frontmatter)
+			.map(([key, value]) => `${key}: ${JSON.stringify(value)}`)
+			.join('\n');
+		this.vault.store.set(
+			file.path,
+			`---\n${yaml}\n---\n${content.slice(match?.[0].length ?? 0)}`,
+		);
+	}
+}
+
 class FakeWorkspace extends Workspace {
 	getLeaf(): WorkspaceLeaf {
 		return new FakeLeaf();
@@ -60,6 +103,7 @@ function makeApp(): { app: App; vault: FakeVault } {
 	const vault = new FakeVault();
 	app.vault = vault;
 	app.workspace = new FakeWorkspace();
+	app.fileManager = new FakeFileManager(vault);
 	return { app, vault };
 }
 
@@ -81,6 +125,9 @@ function opts(over: Partial<BasifyOptions> = {}): BasifyOptions {
 		lowercaseNames: false,
 		lowercaseNameField: false,
 		lowercaseYamlFields: false,
+		sourceMode: 'converted',
+		conflictMode: 'skip',
+		conflictSuffix: 'copy',
 		...over,
 	};
 }
@@ -603,6 +650,108 @@ test('duplicate names are deduped', async () => {
 	await createNotes(app as never, buildConvertInput(sel, opts({ folder: 'Fruit' })));
 	if (!vault.store.has('Fruit/Apple.md')) throw new Error('apple missing');
 	if (!vault.store.has('Fruit/Apple 2.md')) throw new Error('apple 2 missing');
+});
+
+test('existing notes can be skipped', async () => {
+	const { app, vault } = makeApp();
+	vault.store.set('Fruit/Apple.md', 'original');
+	const sel = parseSelection('- Apple');
+	if (sel === null) throw new Error('no selection');
+	const results = await createNotes(
+		app as never,
+		buildConvertInput(sel, opts({ folder: 'Fruit' })),
+		'skip',
+	);
+	if (results[0]?.status !== 'skipped') throw new Error('not skipped');
+	if (vault.store.get('Fruit/Apple.md') !== 'original') throw new Error('changed');
+});
+
+test('custom conflict suffix is numbered after further conflicts', async () => {
+	const { app, vault } = makeApp();
+	vault.store.set('Fruit/Apple.md', 'original');
+	vault.store.set('Fruit/Apple copy.md', 'first copy');
+	const sel = parseSelection('- Apple');
+	if (sel === null) throw new Error('no selection');
+	await createNotes(
+		app as never,
+		buildConvertInput(sel, opts({ folder: 'Fruit' })),
+		'suffix',
+		'copy',
+	);
+	if (!vault.store.has('Fruit/Apple copy 2.md')) throw new Error('copy missing');
+});
+
+test('merge can prefer new properties and preserves the body', async () => {
+	const { app, vault } = makeApp();
+	vault.store.set('Books/Dune.md', '---\nScore: 1\nkept: "yes"\n---\nBody\n');
+	const sel = parseSelection('| Name | Score | Added |\n| --- | --- | --- |\n| Dune | 2 | new |');
+	if (sel === null) throw new Error('no selection');
+	const results = await createNotes(
+		app as never,
+		buildConvertInput(sel, opts({ columns: ['Name', 'Score', 'Added'] })),
+		'merge-new',
+	);
+	const content = vault.store.get('Books/Dune.md') ?? '';
+	if (results[0]?.status !== 'merged') throw new Error('not merged');
+	if (!content.includes('Score: 2')) throw new Error('new value missing: ' + content);
+	if (!content.includes('kept: "yes"')) throw new Error('old property missing');
+	if (!content.endsWith('Body\n')) throw new Error('body changed');
+});
+
+test('merge can prefer existing properties', async () => {
+	const { app, vault } = makeApp();
+	vault.store.set('Books/Dune.md', '---\nScore: 1\n---\nBody');
+	const sel = parseSelection('| Name | Score | Added |\n| --- | --- | --- |\n| Dune | 2 | new |');
+	if (sel === null) throw new Error('no selection');
+	await createNotes(
+		app as never,
+		buildConvertInput(sel, opts({ columns: ['Name', 'Score', 'Added'] })),
+		'merge-old',
+	);
+	const content = vault.store.get('Books/Dune.md') ?? '';
+	if (!content.includes('Score: 1')) throw new Error('old value replaced');
+	if (!content.includes('Added: "new"')) throw new Error('new property missing');
+});
+
+test('merge treats list properties as whole values', async () => {
+	const { app, vault } = makeApp();
+	vault.store.set('Books/Apple.md', '---\ntags: ["old"]\n---\nBody');
+	const sel = parseSelection('- Apple #new');
+	if (sel === null) throw new Error('no selection');
+	await createNotes(
+		app as never,
+		buildConvertInput(sel, opts()),
+		'merge-new',
+	);
+	const content = vault.store.get('Books/Apple.md') ?? '';
+	if (!content.includes('tags: ["new"]')) throw new Error('tags not replaced');
+});
+
+test('source cleanup keeps skipped list entries and their children', () => {
+	const source = '- Apple\n  - detail\n- Pear';
+	const sel = parseSelection(source);
+	if (sel === null) throw new Error('no selection');
+	const cleaned = removeSelectionEntries(source, sel, new Set([2]));
+	if (cleaned !== '- Apple\n  - detail') throw new Error('cleaned: ' + cleaned);
+});
+
+test('source cleanup keeps table headers for skipped rows', () => {
+	const source = '| Name | Score |\n| --- | --- |\n| A | 1 |\n| B | 2 |';
+	const sel = parseSelection(source);
+	if (sel === null) throw new Error('no selection');
+	const cleaned = removeSelectionEntries(source, sel, new Set([2]));
+	if (!cleaned.includes('| Name | Score |\n| --- | --- |\n| B | 2 |')) {
+		throw new Error('cleaned: ' + cleaned);
+	}
+});
+
+test('source cleanup removes the whole block when all entries are handled', () => {
+	const source = '| Name |\n| --- |\n| A |';
+	const sel = parseSelection(source);
+	if (sel === null) throw new Error('no selection');
+	if (removeSelectionEntries(source, sel, new Set([2])) !== '') {
+		throw new Error('table remains');
+	}
 });
 
 // ---------- base content ----------

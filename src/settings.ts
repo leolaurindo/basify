@@ -22,7 +22,7 @@ export interface BasifyMemory {
 	lastBaseFolder: string;
 	lastNameColumn: number;
 	lastStatusField: string;
-	lastMode: 'file' | 'codeblock';
+	lastMode: 'file' | 'codeblock' | 'none';
 	lastEmbedBase: boolean;
 	lastExtractTags: boolean;
 	lastExtractDates: boolean;
@@ -33,6 +33,9 @@ export interface BasifyMemory {
 	lastLowercaseNames: boolean;
 	lastLowercaseNameField: boolean;
 	lastLowercaseYamlFields: boolean;
+	lastSourceMode: 'keep' | 'converted' | 'all';
+	lastConflictMode: 'skip' | 'suffix' | 'merge-new' | 'merge-old';
+	lastConflictSuffix: string;
 }
 
 export const DEFAULT_MEMORY: BasifyMemory = {
@@ -51,6 +54,9 @@ export const DEFAULT_MEMORY: BasifyMemory = {
 	lastLowercaseNames: false,
 	lastLowercaseNameField: false,
 	lastLowercaseYamlFields: false,
+	lastSourceMode: 'converted',
+	lastConflictMode: 'skip',
+	lastConflictSuffix: 'copy',
 };
 
 const FOLDER_OPTIONS: Record<string, string> = {

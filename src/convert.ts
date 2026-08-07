@@ -5,7 +5,7 @@ export interface BasifyOptions {
 	folder: string;
 	baseFolder: string;
 	nameColumn: number | null;
-	mode: 'file' | 'codeblock';
+	mode: 'file' | 'codeblock' | 'none';
 	columns: string[];
 	statusField: string;
 	embedBase: boolean;
@@ -18,6 +18,9 @@ export interface BasifyOptions {
 	lowercaseNames: boolean;
 	lowercaseNameField: boolean;
 	lowercaseYamlFields: boolean;
+	sourceMode: 'keep' | 'converted' | 'all';
+	conflictMode: ConflictMode;
+	conflictSuffix: string;
 }
 
 export interface PropertySpec {
@@ -28,6 +31,14 @@ export interface PropertySpec {
 export interface NoteSpec {
 	name: string;
 	properties: Record<string, PropertySpec>;
+	sourceLine: number;
+}
+
+export type ConflictMode = 'skip' | 'suffix' | 'merge-new' | 'merge-old';
+
+export interface NoteResult {
+	sourceLine: number;
+	status: 'created' | 'merged' | 'skipped';
 }
 
 export interface ConvertInput {
@@ -115,6 +126,7 @@ export function buildConvertInput(
 					options.lowercaseNames,
 				),
 				properties,
+				sourceLine: item.line,
 			});
 		}
 
@@ -123,7 +135,7 @@ export function buildConvertInput(
 
 	const nameColumn = options.nameColumn ?? 0;
 	const notes: NoteSpec[] = [];
-	for (const row of selection.rows) {
+	for (const [rowIndex, row] of selection.rows.entries()) {
 		const properties: Record<string, PropertySpec> = {};
 		let name = '';
 		selection.columns.forEach((column, index) => {
@@ -162,6 +174,7 @@ export function buildConvertInput(
 				options.lowercaseNames,
 			),
 			properties,
+			sourceLine: selection.rowLines[rowIndex] ?? rowIndex,
 		});
 	}
 
@@ -171,13 +184,60 @@ export function buildConvertInput(
 export async function createNotes(
 	app: App,
 	input: ConvertInput,
-): Promise<void> {
+	conflictMode: ConflictMode = 'suffix',
+	conflictSuffix = '',
+): Promise<NoteResult[]> {
 	await ensureFolder(app.vault, input.folder);
+	const results: NoteResult[] = [];
 
 	for (const note of input.notes) {
-		const path = availablePath(app.vault, input.folder, note.name, 'md');
-		await app.vault.create(path, buildNoteContent(note));
+		const path = joinPath(input.folder, note.name, 'md');
+		const existing = app.vault.getAbstractFileByPath(path);
+		if (existing === null) {
+			await app.vault.create(path, buildNoteContent(note));
+			results.push({ sourceLine: note.sourceLine, status: 'created' });
+			continue;
+		}
+
+		if (conflictMode === 'suffix') {
+			const suffix = conflictSuffix.trim();
+			const suffixedName = cleanName(
+				suffix === '' ? note.name : `${note.name} ${suffix}`,
+			);
+			const available = availablePath(
+				app.vault,
+				input.folder,
+				suffixedName,
+				'md',
+			);
+			await app.vault.create(available, buildNoteContent(note));
+			results.push({ sourceLine: note.sourceLine, status: 'created' });
+			continue;
+		}
+
+		if (
+			existing instanceof TFile &&
+			(conflictMode === 'merge-new' || conflictMode === 'merge-old')
+		) {
+			await app.fileManager.processFrontMatter(existing, (frontmatter) => {
+				const existingProperties = frontmatter as Record<string, unknown>;
+				for (const [key, property] of Object.entries(note.properties)) {
+					if (
+						conflictMode === 'merge-new' ||
+						existingProperties[key] === undefined
+					) {
+						existingProperties[key] = typedValue(property.value);
+					}
+				}
+			});
+			results.push({ sourceLine: note.sourceLine, status: 'merged' });
+			continue;
+		}
+
+		results.push({ sourceLine: note.sourceLine, status: 'skipped' });
 	}
+
+	return results;
 }
 
 export function buildBaseContent(input: ConvertInput): string {
@@ -415,14 +475,25 @@ function yamlValue(value: string | string[]): string {
 	if (Array.isArray(value)) {
 		return `[${value.map((item) => `"${escapeQuotes(item)}"`).join(', ')}]`;
 	}
-	const v = value.trim();
-	if (/^(true|false|TRUE|FALSE)$/.test(v)) {
-		return v.toLowerCase();
+	const typed = typedValue(value);
+	if (typeof typed !== 'string') {
+		return String(typed);
 	}
-	if (/^-?\d+(\.\d+)?$/.test(v)) {
-		return v;
+	return `"${escapeQuotes(typed)}"`;
+}
+
+function typedValue(value: string | string[]): string | string[] | boolean | number {
+	if (Array.isArray(value)) {
+		return value;
 	}
-	return `"${escapeQuotes(v)}"`;
+	const trimmed = value.trim();
+	if (/^(true|false)$/i.test(trimmed)) {
+		return trimmed.toLowerCase() === 'true';
+	}
+	if (/^-?\d+(\.\d+)?$/.test(trimmed)) {
+		return Number(trimmed);
+	}
+	return trimmed;
 }
 
 function escapeQuotes(value: string): string {
@@ -450,13 +521,17 @@ function availablePath(
 	ext: string,
 ): string {
 	const base = folder === '' ? name : `${folder}/${name}`;
-	let path = `${base}.${ext}`;
+	let path = joinPath(folder, name, ext);
 	let index = 2;
 	while (vault.getAbstractFileByPath(path) !== null) {
 		path = `${base} ${index}.${ext}`;
 		index++;
 	}
 	return path;
+}
+
+function joinPath(folder: string, name: string, ext: string): string {
+	return `${folder === '' ? name : `${folder}/${name}`}.${ext}`;
 }
 
 function baseName(folder: string): string {

@@ -2,14 +2,14 @@
 
 Convert a selected **list**, **task list**, or **table** into an [Obsidian base](https://obsidian.md/help/bases).
 
-Each list item, checkbox, or table row becomes its own note with frontmatter yaml, and Basify creates a base that shows those notes as a table.
+Each list item, checkbox, or table row becomes its own note with frontmatter yaml. Basify can create a base that shows those notes as a table, or only create the base-ready notes.
 
 ## Usage
 
 1. **Select** a list, task list or a table in the editor (or place the cursor inside one).
 2. Run the command **Convert selection to base**.
 3. Adjust anything you want in the dialog, then **Convert**.
-4. Basify extracts frontmatter yaml fields and creates one note per item, then the base as file or inplace.
+4. Basify extracts frontmatter yaml fields and creates or updates one note per item, then optionally creates the base as a file or inline code block.
 
 Your choices are remembered and prefilled the next time.
 Even though the parser and dialog helps normalizing file names, field names and dates, 
@@ -99,8 +99,23 @@ Everything you can configure in the dialog:
 
 ### Bases
 
-- **Create base as** — create a `.base` file, or **Embed in this note** (insert a `base` code block in place of the selection).
+- **Create base as** — create a `.base` file, **Embed in this note**, or **Don't create a base** to create only base-ready notes.
 - **Embed base file in this note** — under `.base` file mode, also insert a link to the base file in the current note.
+
+### Source entries
+
+- **Keep all entries** — preserve the original list or table and append an inline base or embedded base link below it.
+- **Remove converted entries** — remove created or merged entries while retaining conflicts that were skipped. This is the default.
+- **Remove all entries** — remove every selected entry, including skipped conflicts.
+
+### Existing notes
+
+- **Skip** — leave an existing note unchanged.
+- **Create with suffix** — add your suffix to the filename. Further conflicts are numbered (`File copy.md`, `File copy 2.md`, ...).
+- **Merge, prefer new properties** — preserve the existing note body and replace conflicting frontmatter properties with converted values.
+- **Merge, prefer existing properties** — preserve existing frontmatter values and add only properties that are missing.
+
+Merge choices treat each property as one value. Lists and other property values are replaced or preserved as a whole rather than combined.
 
 ## Fields convertion
 
@@ -131,7 +146,7 @@ The dialog is always the source of truth: whatever you set there is what's used,
 
 ## Back up your vault
 
-Basify creates new files but never modifies or deletes existing ones. Still, **make sure you have a backup of your vault** before using it, as with any vault automation.
+Basify can create notes, merge generated properties into existing notes, and remove converted source entries. It does not delete existing note files. **Make sure you have a backup of your vault** before using it, as with any vault automation.
 
 ## Install
 - The best place to install is from obsidian community plugins.
