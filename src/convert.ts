@@ -21,6 +21,7 @@ export interface BasifyOptions {
 	sourceMode: 'keep' | 'converted' | 'all';
 	conflictMode: ConflictMode;
 	conflictSuffix: string;
+	repeatedFieldMode?: RepeatedFieldMode;
 }
 
 export interface PropertySpec {
@@ -35,6 +36,12 @@ export interface NoteSpec {
 }
 
 export type ConflictMode = 'skip' | 'suffix' | 'merge-new' | 'merge-old';
+
+export type RepeatedFieldMode =
+	| 'list'
+	| 'concatenate'
+	| 'first'
+	| 'last';
 
 export interface NoteResult {
 	sourceLine: number;
@@ -267,12 +274,19 @@ export function normalizeFolder(folder: string): string {
 interface ExtractedMetadata {
 	name: string;
 	tags: string[];
-	fields: Record<string, string>;
+	fields: Record<string, string | string[]>;
 }
 
 type MetadataCandidate =
 	| { start: number; end: number; type: 'tag'; tag: string }
-	| { start: number; end: number; type: 'field'; label: string; value: string };
+	| {
+			start: number;
+			end: number;
+			type: 'field';
+			label: string;
+			value: string;
+			repeatable?: boolean;
+	  };
 
 function extractMetadata(
 	text: string,
@@ -330,6 +344,7 @@ function extractMetadata(
 				type: 'field',
 				label: key,
 				value,
+				repeatable: true,
 			});
 		}
 	} else if (doFields) {
@@ -369,8 +384,9 @@ function extractMetadata(
 	candidates.sort((a, b) => a.start - b.start);
 
 	const tags: string[] = [];
-	const fields: Record<string, string> = {};
+	const fields: Record<string, string | string[]> = {};
 	const removed: Array<{ start: number; end: number }> = [];
+	const repeatedFieldMode = options.repeatedFieldMode ?? 'list';
 
 	for (const candidate of candidates) {
 		if (candidate.type === 'tag') {
@@ -378,9 +394,25 @@ function extractMetadata(
 				tags.push(candidate.tag);
 			}
 			removed.push({ start: candidate.start, end: candidate.end });
-		} else if (fields[candidate.label] === undefined) {
-			fields[candidate.label] = candidate.value;
-			removed.push({ start: candidate.start, end: candidate.end });
+		} else {
+			const existing = fields[candidate.label];
+			if (existing === undefined) {
+				fields[candidate.label] = candidate.value;
+				removed.push({ start: candidate.start, end: candidate.end });
+			} else if (candidate.repeatable) {
+				if (repeatedFieldMode === 'last') {
+					fields[candidate.label] = candidate.value;
+				} else if (repeatedFieldMode === 'first') {
+					// Keep the first value while still removing every occurrence below.
+				} else if (repeatedFieldMode === 'concatenate') {
+					fields[candidate.label] = `${fieldValueText(existing)}; ${candidate.value}`;
+				} else {
+					fields[candidate.label] = Array.isArray(existing)
+						? [...existing, candidate.value]
+						: [existing, candidate.value];
+				}
+				removed.push({ start: candidate.start, end: candidate.end });
+			}
 		}
 	}
 
@@ -391,6 +423,10 @@ function extractMetadata(
 	name = name.replace(/\s+/g, ' ').trim();
 
 	return { name, tags, fields };
+}
+
+function fieldValueText(value: string | string[]): string {
+	return Array.isArray(value) ? value.join('; ') : value;
 }
 
 function isUrlValue(value: string): boolean {

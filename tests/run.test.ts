@@ -399,6 +399,60 @@ test('dynamic extraction preserves URL-valued fields beyond url', () => {
 	}
 });
 
+test('dynamic extraction keeps repeated fields as a list by default', () => {
+	const sel = parseSelection(
+		'- project url:https://example.com/one url:https://example.com/two',
+	);
+	if (sel === null) throw new Error('no selection');
+	const input = buildConvertInput(sel, opts({ extractDynamic: true }));
+	const value = input.notes[0]?.properties.url?.value;
+	if (
+		!Array.isArray(value) ||
+		value.join(',') !== 'https://example.com/one,https://example.com/two'
+	) {
+		throw new Error('urls: ' + JSON.stringify(value));
+	}
+	if (input.notes[0]?.name !== 'project') {
+		throw new Error('name: ' + input.notes[0]?.name);
+	}
+});
+
+test('dynamic extraction can concatenate repeated fields', () => {
+	const sel = parseSelection('- x type:one type:two');
+	if (sel === null) throw new Error('no selection');
+	const input = buildConvertInput(
+		sel,
+		opts({ extractDynamic: true, repeatedFieldMode: 'concatenate' }),
+	);
+	if (input.notes[0]?.properties.type?.value !== 'one; two') {
+		throw new Error('concatenated value');
+	}
+});
+
+test('dynamic extraction can keep the first repeated field', () => {
+	const sel = parseSelection('- x type:one type:two');
+	if (sel === null) throw new Error('no selection');
+	const input = buildConvertInput(
+		sel,
+		opts({ extractDynamic: true, repeatedFieldMode: 'first' }),
+	);
+	if (input.notes[0]?.properties.type?.value !== 'one') {
+		throw new Error('first value');
+	}
+});
+
+test('dynamic extraction can keep the last repeated field', () => {
+	const sel = parseSelection('- x type:one type:two');
+	if (sel === null) throw new Error('no selection');
+	const input = buildConvertInput(
+		sel,
+		opts({ extractDynamic: true, repeatedFieldMode: 'last' }),
+	);
+	if (input.notes[0]?.properties.type?.value !== 'two') {
+		throw new Error('last value');
+	}
+});
+
 test('dynamic extraction preserves a URL in a markdown field link', () => {
 	const sel = parseSelection(
 		'- project url:[repository](https://github.com/example/repo_name#readme)',
