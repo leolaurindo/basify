@@ -277,6 +277,7 @@ class BasifyModal extends Modal {
 				dropdown
 					.addOption('skip', 'Skip')
 					.addOption('suffix', 'Create with suffix')
+					.addOption('hash', 'Create with hash suffix')
 					.addOption('merge-new', 'Merge, prefer new properties')
 					.addOption('merge-old', 'Merge, prefer existing properties');
 				dropdown.setValue(this.conflictMode);
@@ -459,5 +460,5 @@ class BasifyModal extends Modal {
 }
 
 function isConflictMode(value: string): value is ConflictMode {
-	return ['skip', 'suffix', 'merge-new', 'merge-old'].includes(value);
+	return ['skip', 'suffix', 'hash', 'merge-new', 'merge-old'].includes(value);
 }

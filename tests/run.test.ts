@@ -20,6 +20,7 @@ import {
 	createBaseFile,
 	createNotes,
 	LongFilenameError,
+	shortHash,
 	shortenFilename,
 } from '../src/convert';
 
@@ -864,6 +865,38 @@ test('custom conflict suffix is numbered after further conflicts', async () => {
 		'copy',
 	);
 	if (!vault.store.has('Fruit/Apple copy 2.md')) throw new Error('copy missing');
+});
+
+test('hash conflict mode creates a deterministic hash suffix', async () => {
+	const { app, vault } = makeApp();
+	vault.store.set('Fruit/Apple.md', 'original');
+	const sel = parseSelection('- Apple');
+	if (sel === null) throw new Error('no selection');
+	const results = await createNotes(
+		app as never,
+		buildConvertInput(sel, opts({ folder: 'Fruit' })),
+		'hash',
+	);
+	const expected = `Fruit/Apple ${shortHash('Apple')}.md`;
+	if (!vault.store.has(expected)) throw new Error('hash file missing');
+	if (results[0]?.status !== 'created') throw new Error('not created');
+});
+
+test('hash conflict mode numbers repeated hash collisions', async () => {
+	const { app, vault } = makeApp();
+	vault.store.set('Fruit/Apple.md', 'original');
+	const sel = parseSelection('- Apple\n- Apple');
+	if (sel === null) throw new Error('no selection');
+	await createNotes(
+		app as never,
+		buildConvertInput(sel, opts({ folder: 'Fruit' })),
+		'hash',
+	);
+	const hash = shortHash('Apple');
+	if (!vault.store.has(`Fruit/Apple ${hash}.md`)) throw new Error('first hash missing');
+	if (!vault.store.has(`Fruit/Apple ${hash} 2.md`)) {
+		throw new Error('numbered hash missing');
+	}
 });
 
 test('merge can prefer new properties and preserves the body', async () => {
