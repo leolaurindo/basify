@@ -19,11 +19,12 @@ export interface BasifyOptions {
 	lowercaseNameField: boolean;
 	lowercaseYamlFields: boolean;
 	sourceMode: 'keep' | 'converted' | 'all';
-	conflictMode: ConflictMode;
+	conflictMode: ConflictModeValue;
 	conflictSuffix: string;
 	repeatedFieldMode?: RepeatedFieldMode;
 	longFilenameMode?: LongFilenameMode;
 	maxFilenameLength?: number;
+	advancedOptions?: boolean;
 }
 
 export interface PropertySpec {

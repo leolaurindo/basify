@@ -1,5 +1,10 @@
 import { App, PluginSettingTab, SettingDefinitionItem } from 'obsidian';
 import type BasifyPlugin from './main';
+import type {
+	ConflictModeValue,
+	LongFilenameMode,
+	RepeatedFieldMode,
+} from './convert';
 
 export type FolderMode = 'folder' | 'last' | 'fixed';
 
@@ -34,8 +39,12 @@ export interface BasifyMemory {
 	lastLowercaseNameField: boolean;
 	lastLowercaseYamlFields: boolean;
 	lastSourceMode: 'keep' | 'converted' | 'all';
-	lastConflictMode: 'skip' | 'suffix' | 'merge-new' | 'merge-old';
+	lastConflictMode: ConflictModeValue;
 	lastConflictSuffix: string;
+	lastRepeatedFieldMode: RepeatedFieldMode;
+	lastLongFilenameMode: LongFilenameMode;
+	lastMaxFilenameLength: number;
+	lastAdvancedOptions: boolean;
 }
 
 export const DEFAULT_MEMORY: BasifyMemory = {
@@ -57,6 +66,10 @@ export const DEFAULT_MEMORY: BasifyMemory = {
 	lastSourceMode: 'converted',
 	lastConflictMode: 'skip',
 	lastConflictSuffix: 'copy',
+	lastRepeatedFieldMode: 'list',
+	lastLongFilenameMode: 'shorten',
+	lastMaxFilenameLength: 120,
+	lastAdvancedOptions: false,
 };
 
 const FOLDER_OPTIONS: Record<string, string> = {
