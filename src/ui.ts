@@ -60,10 +60,6 @@ class BasifyModal extends Modal {
 		this.defaultFolder = prompt.defaultFolder;
 		this.options = {
 			baseFolder: prompt.defaultBaseFolder,
-			nameColumn: Math.min(
-				Math.max(prompt.initial?.nameColumn ?? 0, 0),
-				Math.max(this.columns.length - 1, 0),
-			),
 			mode: prompt.initial?.mode ?? 'file',
 			statusField: prompt.initial?.statusField ?? 'status',
 			embedBase: prompt.initial?.embedBase ?? false,
@@ -84,7 +80,15 @@ class BasifyModal extends Modal {
 			maxFilenameLength:
 				prompt.initial?.maxFilenameLength ?? DEFAULT_MAX_FILENAME_LENGTH,
 			advancedOptions: prompt.initial?.advancedOptions ?? false,
+			nameColumn: 0,
 		};
+		if (this.columns.length > 0) {
+			const lastColumn = this.columns.length - 1;
+			this.options.nameColumn = Math.min(
+				Math.max(prompt.initial?.nameColumn ?? 0, 0),
+				lastColumn,
+			);
+		}
 		this.resolve = resolve;
 	}
 
@@ -500,12 +504,15 @@ class BasifyModal extends Modal {
 			return;
 		}
 		this.settled = true;
+		const folder = this.folderText.getValue().trim();
+		const { baseFolder, nameColumn, mode, ...options } = this.options;
 		this.resolve({
-			...this.options,
-			folder: this.folderText.getValue().trim(),
-			nameColumn:
-				this.columns.length > 0 ? this.options.nameColumn : null,
+			folder,
+			baseFolder,
+			nameColumn: this.columns.length > 0 ? nameColumn : null,
+			mode,
 			columns: this.columns,
+			...options,
 		});
 		this.close();
 	}

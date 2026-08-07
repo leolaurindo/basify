@@ -38,13 +38,8 @@ export interface NoteSpec {
 	sourceLine: number;
 }
 
-export type ConflictModeValue =
-	| 'skip'
-	| 'suffix'
-	| 'hash'
-	| 'merge-new'
-	| 'merge-old'
-	| 'merge-combine';
+export type ConflictMode = 'skip' | 'suffix' | 'merge-new' | 'merge-old';
+export type ConflictModeValue = ConflictMode | 'hash' | 'merge-combine';
 
 export type RepeatedFieldMode =
 	| 'list'
@@ -661,9 +656,11 @@ function formatName(
 	lowercase: boolean,
 ): string {
 	const formatted =
-		separator === 'space'
-			? name
-			: name.replace(/ /g, separator === 'dash' ? '-' : '_');
+		separator === 'dash'
+			? name.replace(/ /g, '-')
+			: separator === 'underscore'
+				? name.replace(/ /g, '_')
+				: name;
 	return lowercase ? formatted.toLowerCase() : formatted;
 }
 
