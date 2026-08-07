@@ -17,6 +17,10 @@ export interface BasifyPrompt {
 	initial?: Partial<BasifyOptions>;
 }
 
+type ModalOptions = Required<
+	Omit<BasifyOptions, 'folder' | 'columns' | 'nameColumn'>
+> & { nameColumn: number };
+
 export function promptBasify(
 	app: App,
 	prompt: BasifyPrompt,
@@ -36,27 +40,7 @@ class BasifyModal extends Modal {
 	private folderText!: TextComponent;
 	private outputFolderSuggest: FolderSuggest | null = null;
 	private baseFolderSuggest: FolderSuggest | null = null;
-	private nameColumn = 0;
-	private mode: 'file' | 'codeblock' | 'none';
-	private statusField: string;
-	private baseFolder: string;
-	private embedBase: boolean;
-	private extractTags: boolean;
-	private extractDates: boolean;
-	private extractDynamic: boolean;
-	private nameSeparator: 'space' | 'dash' | 'underscore';
-	private fileNameField: string;
-	private fileNameFieldSeparator: 'space' | 'dash' | 'underscore';
-	private lowercaseNames: boolean;
-	private lowercaseNameField: boolean;
-	private lowercaseYamlFields: boolean;
-	private sourceMode: 'keep' | 'converted' | 'all';
-	private conflictMode: ConflictModeValue;
-	private conflictSuffix: string;
-	private repeatedFieldMode: RepeatedFieldMode;
-	private longFilenameMode: LongFilenameMode;
-	private maxFilenameLength: number;
-	private advancedOptions: boolean;
+	private readonly options: ModalOptions;
 	private fieldsContainer: HTMLElement | null = null;
 	private nameFieldOptionsContainer: HTMLElement | null = null;
 	private modeOptionsContainer: HTMLElement | null = null;
@@ -74,35 +58,33 @@ class BasifyModal extends Modal {
 		this.hasHeader = prompt.hasHeader;
 		this.isTaskList = prompt.isTaskList;
 		this.defaultFolder = prompt.defaultFolder;
-		this.baseFolder = prompt.defaultBaseFolder;
-		this.mode = prompt.initial?.mode ?? 'file';
-		this.statusField = prompt.initial?.statusField ?? 'status';
-		this.embedBase = prompt.initial?.embedBase ?? false;
-		this.extractTags = prompt.initial?.extractTags ?? true;
-		this.extractDates = prompt.initial?.extractDates ?? true;
-		this.extractDynamic = prompt.initial?.extractDynamic ?? false;
-		this.nameSeparator = prompt.initial?.nameSeparator ?? 'space';
-		this.fileNameField = prompt.initial?.fileNameField ?? '';
-		this.fileNameFieldSeparator =
-			prompt.initial?.fileNameFieldSeparator ?? 'space';
-		this.lowercaseNames = prompt.initial?.lowercaseNames ?? false;
-		this.lowercaseNameField = prompt.initial?.lowercaseNameField ?? false;
-		this.lowercaseYamlFields = prompt.initial?.lowercaseYamlFields ?? false;
-		this.sourceMode = prompt.initial?.sourceMode ?? 'converted';
-		this.conflictMode = prompt.initial?.conflictMode ?? 'skip';
-		this.conflictSuffix = prompt.initial?.conflictSuffix ?? 'copy';
-		this.repeatedFieldMode = prompt.initial?.repeatedFieldMode ?? 'list';
-		this.longFilenameMode = prompt.initial?.longFilenameMode ?? 'shorten';
-		this.maxFilenameLength =
-			prompt.initial?.maxFilenameLength ?? DEFAULT_MAX_FILENAME_LENGTH;
-		this.advancedOptions = prompt.initial?.advancedOptions ?? false;
-		if (this.columns.length > 0) {
-			const lastColumn = this.columns.length - 1;
-			this.nameColumn = Math.min(
+		this.options = {
+			baseFolder: prompt.defaultBaseFolder,
+			nameColumn: Math.min(
 				Math.max(prompt.initial?.nameColumn ?? 0, 0),
-				lastColumn,
-			);
-		}
+				Math.max(this.columns.length - 1, 0),
+			),
+			mode: prompt.initial?.mode ?? 'file',
+			statusField: prompt.initial?.statusField ?? 'status',
+			embedBase: prompt.initial?.embedBase ?? false,
+			extractTags: prompt.initial?.extractTags ?? true,
+			extractDates: prompt.initial?.extractDates ?? true,
+			extractDynamic: prompt.initial?.extractDynamic ?? false,
+			nameSeparator: prompt.initial?.nameSeparator ?? 'space',
+			fileNameField: prompt.initial?.fileNameField ?? '',
+			fileNameFieldSeparator: prompt.initial?.fileNameFieldSeparator ?? 'space',
+			lowercaseNames: prompt.initial?.lowercaseNames ?? false,
+			lowercaseNameField: prompt.initial?.lowercaseNameField ?? false,
+			lowercaseYamlFields: prompt.initial?.lowercaseYamlFields ?? false,
+			sourceMode: prompt.initial?.sourceMode ?? 'converted',
+			conflictMode: prompt.initial?.conflictMode ?? 'skip',
+			conflictSuffix: prompt.initial?.conflictSuffix ?? 'copy',
+			repeatedFieldMode: prompt.initial?.repeatedFieldMode ?? 'list',
+			longFilenameMode: prompt.initial?.longFilenameMode ?? 'shorten',
+			maxFilenameLength:
+				prompt.initial?.maxFilenameLength ?? DEFAULT_MAX_FILENAME_LENGTH,
+			advancedOptions: prompt.initial?.advancedOptions ?? false,
+		};
 		this.resolve = resolve;
 	}
 
@@ -134,9 +116,9 @@ class BasifyModal extends Modal {
 				dropdown.addOption('file', '.base file');
 				dropdown.addOption('codeblock', 'Embed in this note');
 				dropdown.addOption('none', "Don't create a base");
-				dropdown.setValue(this.mode);
+				dropdown.setValue(this.options.mode);
 				dropdown.onChange((value: string) => {
-					this.mode =
+					this.options.mode =
 						value === 'codeblock' || value === 'none' ? value : 'file';
 					this.renderModeOptions();
 				});
@@ -157,9 +139,9 @@ class BasifyModal extends Modal {
 					.addOption('keep', 'Keep all entries')
 					.addOption('converted', 'Remove converted entries')
 					.addOption('all', 'Remove all entries');
-				dropdown.setValue(this.sourceMode);
+				dropdown.setValue(this.options.sourceMode);
 				dropdown.onChange((value: string) => {
-					this.sourceMode =
+					this.options.sourceMode =
 						value === 'keep' || value === 'all' ? value : 'converted';
 				});
 			});
@@ -174,9 +156,9 @@ class BasifyModal extends Modal {
 					.addOption('merge-new', 'Merge, prefer new properties')
 					.addOption('merge-old', 'Merge, prefer existing properties')
 					.addOption('merge-combine', 'Merge, combine conflicting properties');
-				dropdown.setValue(this.conflictMode);
+				dropdown.setValue(this.options.conflictMode);
 				dropdown.onChange((value: string) => {
-					this.conflictMode = isConflictMode(value) ? value : 'skip';
+					this.options.conflictMode = isConflictMode(value) ? value : 'skip';
 					this.renderConflictOptions();
 				});
 			});
@@ -190,9 +172,9 @@ class BasifyModal extends Modal {
 			.setName('Advanced options')
 			.setDesc('Show formatting, extraction, and filename details.')
 			.addToggle((toggle) => {
-				toggle.setValue(this.advancedOptions);
+				toggle.setValue(this.options.advancedOptions);
 				toggle.onChange((value: boolean) => {
-					this.advancedOptions = value;
+					this.options.advancedOptions = value;
 					this.renderAdvancedOptions();
 				});
 			});
@@ -220,7 +202,7 @@ class BasifyModal extends Modal {
 		container.empty();
 		this.fieldsContainer = null;
 		this.nameFieldOptionsContainer = null;
-		if (!this.advancedOptions) {
+		if (!this.options.advancedOptions) {
 			return;
 		}
 
@@ -232,9 +214,9 @@ class BasifyModal extends Modal {
 					.addOption('space', 'Keep spaces')
 					.addOption('dash', 'Replace with dashes')
 					.addOption('underscore', 'Replace with underscores');
-				dropdown.setValue(this.nameSeparator);
+				dropdown.setValue(this.options.nameSeparator);
 				dropdown.onChange((value: string) => {
-					this.nameSeparator =
+					this.options.nameSeparator =
 						value === 'dash' || value === 'underscore' ? value : 'space';
 				});
 			});
@@ -243,9 +225,9 @@ class BasifyModal extends Modal {
 			.setName('Lowercase file names')
 			.setDesc('Use lowercase letters in the note file names.')
 			.addToggle((toggle) => {
-				toggle.setValue(this.lowercaseNames);
+				toggle.setValue(this.options.lowercaseNames);
 				toggle.onChange((value: boolean) => {
-					this.lowercaseNames = value;
+					this.options.lowercaseNames = value;
 				});
 			});
 
@@ -253,9 +235,9 @@ class BasifyModal extends Modal {
 			.setName('Lowercase property names')
 			.setDesc('Use lowercase letters in the frontmatter property names.')
 			.addToggle((toggle) => {
-				toggle.setValue(this.lowercaseYamlFields);
+				toggle.setValue(this.options.lowercaseYamlFields);
 				toggle.onChange((value: boolean) => {
-					this.lowercaseYamlFields = value;
+					this.options.lowercaseYamlFields = value;
 				});
 			});
 
@@ -263,9 +245,9 @@ class BasifyModal extends Modal {
 			.setName('File name field')
 			.setDesc('Write the note name to this property (leave empty to skip).')
 			.addText((text) => {
-				text.setPlaceholder('Title').setValue(this.fileNameField);
+				text.setPlaceholder('Title').setValue(this.options.fileNameField);
 				text.onChange((value: string) => {
-					this.fileNameField = value.trim();
+					this.options.fileNameField = value.trim();
 					this.renderNameFieldOptions();
 				});
 			});
@@ -279,27 +261,27 @@ class BasifyModal extends Modal {
 				.setName('Extract tags')
 				.setDesc('Turn #tags into a tags field.')
 				.addToggle((toggle) => {
-					toggle.setValue(this.extractTags);
+					toggle.setValue(this.options.extractTags);
 					toggle.onChange((value: boolean) => {
-						this.extractTags = value;
+						this.options.extractTags = value;
 					});
 				});
 			new Setting(container)
 				.setName('Extract dates')
 				.setDesc('Turn labeled dates into date fields.')
 				.addToggle((toggle) => {
-					toggle.setValue(this.extractDates);
+					toggle.setValue(this.options.extractDates);
 					toggle.onChange((value: boolean) => {
-						this.extractDates = value;
+						this.options.extractDates = value;
 					});
 				});
 			new Setting(container)
 				.setName('Dynamic field extraction')
 				.setDesc('Turn every key:value pair into a field.')
 				.addToggle((toggle) => {
-					toggle.setValue(this.extractDynamic);
+					toggle.setValue(this.options.extractDynamic);
 					toggle.onChange((value: boolean) => {
-						this.extractDynamic = value;
+						this.options.extractDynamic = value;
 					});
 				});
 			new Setting(container)
@@ -311,9 +293,9 @@ class BasifyModal extends Modal {
 						.addOption('concatenate', 'Concatenate values')
 						.addOption('first', 'Keep first value')
 						.addOption('last', 'Keep last value');
-					dropdown.setValue(this.repeatedFieldMode);
+					dropdown.setValue(this.options.repeatedFieldMode);
 					dropdown.onChange((value: string) => {
-						this.repeatedFieldMode = isRepeatedFieldMode(value)
+						this.options.repeatedFieldMode = isRepeatedFieldMode(value)
 							? value
 							: 'list';
 					});
@@ -325,9 +307,9 @@ class BasifyModal extends Modal {
 				.setName('Status field')
 				.setDesc('Property name for the checkbox state.')
 				.addText((text) => {
-					text.setValue(this.statusField);
+					text.setValue(this.options.statusField);
 					text.onChange((value: string) => {
-						this.statusField = value.trim();
+						this.options.statusField = value.trim();
 					});
 				});
 		}
@@ -340,9 +322,9 @@ class BasifyModal extends Modal {
 					this.columns.forEach((column, index) => {
 						dropdown.addOption(String(index), column);
 					});
-					dropdown.setValue(String(this.nameColumn));
+					dropdown.setValue(String(this.options.nameColumn));
 					dropdown.onChange((value: string) => {
-						this.nameColumn = parseInt(value, 10);
+						this.options.nameColumn = parseInt(value, 10);
 						if (!this.hasHeader) {
 							this.renderFields();
 						}
@@ -364,9 +346,9 @@ class BasifyModal extends Modal {
 					.addOption('shorten', 'Shorten')
 					.addOption('skip', 'Skip entry')
 					.addOption('cancel', 'Cancel conversion');
-				dropdown.setValue(this.longFilenameMode);
+				dropdown.setValue(this.options.longFilenameMode);
 				dropdown.onChange((value: string) => {
-					this.longFilenameMode = isLongFilenameMode(value)
+					this.options.longFilenameMode = isLongFilenameMode(value)
 						? value
 						: 'shorten';
 				});
@@ -376,12 +358,12 @@ class BasifyModal extends Modal {
 			.setName('Maximum filename length')
 			.setDesc('Maximum length of the note filename, without .md.')
 			.addText((text) => {
-				text.setValue(String(this.maxFilenameLength));
+				text.setValue(String(this.options.maxFilenameLength));
 				text.inputEl.type = 'number';
 				text.onChange((value: string) => {
 					const parsed = Number.parseInt(value, 10);
 					if (Number.isInteger(parsed) && parsed > 3) {
-						this.maxFilenameLength = parsed;
+						this.options.maxFilenameLength = parsed;
 					}
 				});
 			});
@@ -393,7 +375,7 @@ class BasifyModal extends Modal {
 			return;
 		}
 		container.empty();
-		if (this.fileNameField === '') {
+		if (this.options.fileNameField === '') {
 			return;
 		}
 		new Setting(container)
@@ -404,9 +386,9 @@ class BasifyModal extends Modal {
 					.addOption('space', 'Keep spaces')
 					.addOption('dash', 'Replace with dashes')
 					.addOption('underscore', 'Replace with underscores');
-				dropdown.setValue(this.fileNameFieldSeparator);
+				dropdown.setValue(this.options.fileNameFieldSeparator);
 				dropdown.onChange((value: string) => {
-					this.fileNameFieldSeparator =
+					this.options.fileNameFieldSeparator =
 						value === 'dash' || value === 'underscore'
 							? value
 							: 'space';
@@ -416,9 +398,9 @@ class BasifyModal extends Modal {
 			.setName('Lowercase name field')
 			.setDesc('Use lowercase letters in the property value.')
 			.addToggle((toggle) => {
-				toggle.setValue(this.lowercaseNameField);
+				toggle.setValue(this.options.lowercaseNameField);
 				toggle.onChange((value: boolean) => {
-					this.lowercaseNameField = value;
+					this.options.lowercaseNameField = value;
 				});
 			});
 	}
@@ -431,22 +413,22 @@ class BasifyModal extends Modal {
 		this.baseFolderSuggest?.close();
 		this.baseFolderSuggest = null;
 		container.empty();
-		if (this.mode !== 'file') {
+		if (this.options.mode !== 'file') {
 			return;
 		}
 		new Setting(container)
 			.setName('Base files folder')
 			.setDesc('Folder where the .base file is created.')
 			.addText((text) => {
-				text.setValue(this.baseFolder);
+				text.setValue(this.options.baseFolder);
 				text.onChange((value: string) => {
-					this.baseFolder = value.trim();
+					this.options.baseFolder = value.trim();
 				});
 				this.baseFolderSuggest = new FolderSuggest(
 					this.app,
 					text.inputEl,
 					(path) => {
-						this.baseFolder = path;
+						this.options.baseFolder = path;
 					},
 				);
 			});
@@ -454,9 +436,9 @@ class BasifyModal extends Modal {
 			.setName('Embed base file in this note')
 			.setDesc('Insert a link to the base file at the selection.')
 			.addToggle((toggle) => {
-				toggle.setValue(this.embedBase);
+				toggle.setValue(this.options.embedBase);
 				toggle.onChange((value: boolean) => {
-					this.embedBase = value;
+					this.options.embedBase = value;
 				});
 			});
 	}
@@ -467,16 +449,16 @@ class BasifyModal extends Modal {
 			return;
 		}
 		container.empty();
-		if (this.conflictMode !== 'suffix') {
+		if (this.options.conflictMode !== 'suffix') {
 			return;
 		}
 		new Setting(container)
 			.setName('Conflict suffix')
 			.setDesc('Added after the note name. Further conflicts are numbered.')
 			.addText((text) => {
-				text.setPlaceholder('Copy').setValue(this.conflictSuffix);
+				text.setPlaceholder('Copy').setValue(this.options.conflictSuffix);
 				text.onChange((value: string) => {
-					this.conflictSuffix = value.trim();
+					this.options.conflictSuffix = value.trim();
 				});
 			});
 	}
@@ -488,7 +470,7 @@ class BasifyModal extends Modal {
 		}
 		container.empty();
 		this.columns.forEach((column, index) => {
-			if (index === this.nameColumn) {
+			if (index === this.options.nameColumn) {
 				return;
 			}
 			new Setting(container)
@@ -519,30 +501,11 @@ class BasifyModal extends Modal {
 		}
 		this.settled = true;
 		this.resolve({
+			...this.options,
 			folder: this.folderText.getValue().trim(),
-			baseFolder: this.baseFolder,
 			nameColumn:
-				this.columns.length > 0 ? this.nameColumn : null,
-			mode: this.mode,
+				this.columns.length > 0 ? this.options.nameColumn : null,
 			columns: this.columns,
-			statusField: this.statusField,
-			embedBase: this.embedBase,
-			extractTags: this.extractTags,
-			extractDates: this.extractDates,
-			extractDynamic: this.extractDynamic,
-			nameSeparator: this.nameSeparator,
-			fileNameField: this.fileNameField,
-			fileNameFieldSeparator: this.fileNameFieldSeparator,
-			lowercaseNames: this.lowercaseNames,
-			lowercaseNameField: this.lowercaseNameField,
-			lowercaseYamlFields: this.lowercaseYamlFields,
-			sourceMode: this.sourceMode,
-			conflictMode: this.conflictMode,
-			conflictSuffix: this.conflictSuffix,
-			repeatedFieldMode: this.repeatedFieldMode,
-			longFilenameMode: this.longFilenameMode,
-			maxFilenameLength: this.maxFilenameLength,
-			advancedOptions: this.advancedOptions,
 		});
 		this.close();
 	}

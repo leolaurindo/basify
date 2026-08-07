@@ -38,8 +38,13 @@ export interface NoteSpec {
 	sourceLine: number;
 }
 
-export type ConflictMode = 'skip' | 'suffix' | 'merge-new' | 'merge-old';
-export type ConflictModeValue = ConflictMode | 'hash' | 'merge-combine';
+export type ConflictModeValue =
+	| 'skip'
+	| 'suffix'
+	| 'hash'
+	| 'merge-new'
+	| 'merge-old'
+	| 'merge-combine';
 
 export type RepeatedFieldMode =
 	| 'list'
@@ -80,7 +85,6 @@ const LABELED_DATE = /\b([A-Za-z]+)\s*:\s*(\d{4}-\d{2}-\d{2})\b/g;
 const AT_DATE = /@(\d{4}-\d{2}-\d{2})\b/g;
 const KEY_VALUE = /\b([A-Za-z][A-Za-z0-9_-]*)\s*:\s*([^\s]+)/g;
 const URL_VALUE = /\b[A-Za-z][A-Za-z0-9+.-]*:\/\/[^\s<>()]+/g;
-const LOGGING_ENABLED = true;
 const DATE_LABELS = [
 	'due',
 	'start',
@@ -140,21 +144,16 @@ export function buildConvertInput(
 			if (nameProperty !== null) {
 				properties[nameProperty.key] = {
 					displayName: nameProperty.displayName,
-					value: applyCase(
-						applySeparator(
-							baseName,
-							options.fileNameFieldSeparator,
-						),
+					value: formatName(
+						baseName,
+						options.fileNameFieldSeparator,
 						options.lowercaseNameField,
 					),
 				};
 			}
 
 			notes.push({
-				name: applyCase(
-					applySeparator(baseName, separator),
-					options.lowercaseNames,
-				),
+				name: formatName(baseName, separator, options.lowercaseNames),
 				properties,
 				sourceLine: item.line,
 			});
@@ -189,20 +188,15 @@ export function buildConvertInput(
 		if (nameProperty !== null) {
 			properties[nameProperty.key] = {
 				displayName: nameProperty.displayName,
-				value: applyCase(
-					applySeparator(
-						baseName,
-						options.fileNameFieldSeparator,
-					),
+				value: formatName(
+					baseName,
+					options.fileNameFieldSeparator,
 					options.lowercaseNameField,
 				),
 			};
 		}
 		notes.push({
-			name: applyCase(
-				applySeparator(baseName, separator),
-				options.lowercaseNames,
-			),
+			name: formatName(baseName, separator, options.lowercaseNames),
 			properties,
 			sourceLine: selection.rowLines[rowIndex] ?? rowIndex,
 		});
@@ -270,43 +264,22 @@ export async function createNotes(
 			continue;
 		}
 
-		if (conflictMode === 'suffix') {
+		if (conflictMode === 'suffix' || conflictMode === 'hash') {
 			logDebug('note-conflict', {
 				sourceLine: note.sourceLine,
 				mode: conflictMode,
 			});
-			const suffix = conflictSuffix.trim();
-			const suffixedName = cleanName(
+			const suffix =
+				conflictMode === 'hash'
+					? shortHash(originalNote.name)
+					: conflictSuffix.trim();
+			const conflictName = cleanName(
 				suffix === '' ? note.name : `${note.name} ${suffix}`,
 			);
 			const available = availablePath(
 				app.vault,
 				input.folder,
-				suffixedName,
-				'md',
-			);
-			await app.vault.create(available, buildNoteContent(note));
-			logDebug('note-created', {
-				sourceLine: note.sourceLine,
-				nameLength: note.name.length,
-				shortened,
-			});
-			results.push({ sourceLine: note.sourceLine, status: 'created', shortened });
-			continue;
-		}
-
-		if (conflictMode === 'hash') {
-			logDebug('note-conflict', {
-				sourceLine: note.sourceLine,
-				mode: conflictMode,
-			});
-			const hashedName = cleanName(
-				`${note.name} ${shortHash(originalNote.name)}`,
-			);
-			const available = availablePath(
-				app.vault,
-				input.folder,
-				hashedName,
+				conflictName,
 				'md',
 			);
 			await app.vault.create(available, buildNoteContent(note));
@@ -431,9 +404,7 @@ function propertyValues(value: unknown): unknown[] {
 }
 
 function logDebug(event: string, details: Record<string, unknown>): void {
-	if (LOGGING_ENABLED) {
-		console.debug(`[Basify] ${event}`, details);
-	}
+	console.debug(`[Basify] ${event}`, details);
 }
 
 export function buildBaseContent(input: ConvertInput): string {
@@ -684,21 +655,16 @@ function cleanName(input: string): string {
 	return name === '' ? 'Untitled' : name;
 }
 
-function applySeparator(
+function formatName(
 	name: string,
 	separator: 'space' | 'dash' | 'underscore',
+	lowercase: boolean,
 ): string {
-	if (separator === 'dash') {
-		return name.replace(/ /g, '-');
-	}
-	if (separator === 'underscore') {
-		return name.replace(/ /g, '_');
-	}
-	return name;
-}
-
-function applyCase(name: string, lowercase: boolean): string {
-	return lowercase ? name.toLowerCase() : name;
+	const formatted =
+		separator === 'space'
+			? name
+			: name.replace(/ /g, separator === 'dash' ? '-' : '_');
+	return lowercase ? formatted.toLowerCase() : formatted;
 }
 
 function sanitizeProperty(input: string): string {
