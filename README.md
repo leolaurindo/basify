@@ -166,3 +166,14 @@ npm run build   # production build (tsc + esbuild)
 npm run test    # unit tests (no extra dependencies)
 npm run lint    # eslint
 ```
+
+## Release
+
+Release tags must exactly match the version in `manifest.json`, without a leading `v`. From a clean working tree on `master`:
+
+```bash
+npm version 0.1.2 -m "Release %s"
+git push origin master 0.1.2
+```
+
+Pushing the tag runs the release workflow. It verifies the package and manifest versions, runs the tests, lint, and build, then creates the GitHub release with `main.js`, `manifest.json`, and `styles.css` attached.
