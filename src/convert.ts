@@ -79,6 +79,7 @@ const LABELED_DATE = /\b([A-Za-z]+)\s*:\s*(\d{4}-\d{2}-\d{2})\b/g;
 const AT_DATE = /@(\d{4}-\d{2}-\d{2})\b/g;
 const KEY_VALUE = /\b([A-Za-z][A-Za-z0-9_-]*)\s*:\s*([^\s]+)/g;
 const URL_VALUE = /\b[A-Za-z][A-Za-z0-9+.-]*:\/\/[^\s<>()]+/g;
+const LOGGING_ENABLED = true;
 const DATE_LABELS = [
 	'due',
 	'start',
@@ -224,16 +225,34 @@ export async function createNotes(
 	if (longFilenameMode === 'cancel' && longNotes.length > 0) {
 		throw new LongFilenameError(longNotes.length, filenameLength);
 	}
+	logDebug('prepare-notes', {
+		count: input.notes.length,
+		conflictMode,
+		longFilenameMode,
+		maxFilenameLength: filenameLength,
+	});
 	await ensureFolder(app.vault, input.folder);
 	const results: NoteResult[] = [];
 
 	for (const originalNote of input.notes) {
 		const isLong = originalNote.name.length > filenameLength;
 		if (isLong && longFilenameMode === 'skip') {
+			logDebug('note-skipped', {
+				sourceLine: originalNote.sourceLine,
+				reason: 'filename-too-long',
+				nameLength: originalNote.name.length,
+			});
 			results.push({ sourceLine: originalNote.sourceLine, status: 'skipped' });
 			continue;
 		}
 		const shortened = isLong;
+		if (shortened) {
+			logDebug('filename-shortened', {
+				sourceLine: originalNote.sourceLine,
+				originalLength: originalNote.name.length,
+				maxLength: filenameLength,
+			});
+		}
 		const note = isLong
 			? { ...originalNote, name: shortenFilename(originalNote.name, filenameLength) }
 			: originalNote;
@@ -241,11 +260,20 @@ export async function createNotes(
 		const existing = app.vault.getAbstractFileByPath(path);
 		if (existing === null) {
 			await app.vault.create(path, buildNoteContent(note));
+			logDebug('note-created', {
+				sourceLine: note.sourceLine,
+				nameLength: note.name.length,
+				shortened,
+			});
 			results.push({ sourceLine: note.sourceLine, status: 'created', shortened });
 			continue;
 		}
 
 		if (conflictMode === 'suffix') {
+			logDebug('note-conflict', {
+				sourceLine: note.sourceLine,
+				mode: conflictMode,
+			});
 			const suffix = conflictSuffix.trim();
 			const suffixedName = cleanName(
 				suffix === '' ? note.name : `${note.name} ${suffix}`,
@@ -257,11 +285,20 @@ export async function createNotes(
 				'md',
 			);
 			await app.vault.create(available, buildNoteContent(note));
+			logDebug('note-created', {
+				sourceLine: note.sourceLine,
+				nameLength: note.name.length,
+				shortened,
+			});
 			results.push({ sourceLine: note.sourceLine, status: 'created', shortened });
 			continue;
 		}
 
 		if (conflictMode === 'hash') {
+			logDebug('note-conflict', {
+				sourceLine: note.sourceLine,
+				mode: conflictMode,
+			});
 			const hashedName = cleanName(
 				`${note.name} ${shortHash(originalNote.name)}`,
 			);
@@ -272,6 +309,11 @@ export async function createNotes(
 				'md',
 			);
 			await app.vault.create(available, buildNoteContent(note));
+			logDebug('note-created', {
+				sourceLine: note.sourceLine,
+				nameLength: note.name.length,
+				shortened,
+			});
 			results.push({ sourceLine: note.sourceLine, status: 'created', shortened });
 			continue;
 		}
@@ -282,6 +324,10 @@ export async function createNotes(
 				conflictMode === 'merge-old' ||
 				conflictMode === 'merge-combine')
 		) {
+			logDebug('note-conflict', {
+				sourceLine: note.sourceLine,
+				mode: conflictMode,
+			});
 			await app.fileManager.processFrontMatter(existing, (frontmatter) => {
 				const existingProperties = frontmatter as Record<string, unknown>;
 				for (const [key, property] of Object.entries(note.properties)) {
@@ -301,11 +347,20 @@ export async function createNotes(
 					}
 				}
 			});
+			logDebug('note-merged', {
+				sourceLine: note.sourceLine,
+				mode: conflictMode,
+				shortened,
+			});
 			results.push({ sourceLine: note.sourceLine, status: 'merged', shortened });
 			continue;
 		}
 
 		results.push({ sourceLine: note.sourceLine, status: 'skipped' });
+		logDebug('note-skipped', {
+			sourceLine: note.sourceLine,
+			reason: 'conflict',
+		});
 	}
 
 	return results;
@@ -372,6 +427,12 @@ function combinePropertyValues(left: unknown, right: unknown): unknown[] {
 
 function propertyValues(value: unknown): unknown[] {
 	return Array.isArray(value) ? (value as unknown[]) : [value];
+}
+
+function logDebug(event: string, details: Record<string, unknown>): void {
+	if (LOGGING_ENABLED) {
+		console.debug(`[Basify] ${event}`, details);
+	}
 }
 
 export function buildBaseContent(input: ConvertInput): string {

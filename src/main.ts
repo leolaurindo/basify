@@ -174,6 +174,9 @@ export default class BasifyPlugin extends Plugin {
 				new Notice(`Basify cancelled: ${error.message}`);
 				return;
 			}
+			console.error('[Basify] conversion-failed', {
+				errorType: error instanceof Error ? error.name : 'unknown',
+			});
 			const message =
 				error instanceof Error ? error.message : String(error);
 			new Notice(`Basify failed: ${message}`);

@@ -829,6 +829,27 @@ test('long filenames can cancel before creating files', async () => {
 	if (vault.store.size !== 0) throw new Error('created before cancellation');
 });
 
+test('conversion logging uses safe metadata only', async () => {
+	const { app } = makeApp();
+	const sel = parseSelection('- private project url:https://example.com/private');
+	if (sel === null) throw new Error('no selection');
+	const messages: unknown[][] = [];
+	const debug = console.debug;
+	console.debug = (...args: unknown[]) => messages.push(args);
+	try {
+		await createNotes(app as never, buildConvertInput(sel, opts({ folder: 'Private' })));
+	} finally {
+		console.debug = debug;
+	}
+	if (messages.length === 0) throw new Error('no debug logs');
+	if (messages.some((message) => JSON.stringify(message).includes('private'))) {
+		throw new Error('logged note contents');
+	}
+	if (!messages.some((message) => message[0] === '[Basify] note-created')) {
+		throw new Error('missing creation log');
+	}
+});
+
 test('duplicate names are deduped', async () => {
 	const { app, vault } = makeApp();
 	const sel = parseSelection('- Apple\n- Apple');
