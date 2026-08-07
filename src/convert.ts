@@ -51,6 +51,7 @@ const TAG_PATTERN = /#([A-Za-z0-9_/-]+)/g;
 const LABELED_DATE = /\b([A-Za-z]+)\s*:\s*(\d{4}-\d{2}-\d{2})\b/g;
 const AT_DATE = /@(\d{4}-\d{2}-\d{2})\b/g;
 const KEY_VALUE = /\b([A-Za-z][A-Za-z0-9_-]*)\s*:\s*([^\s]+)/g;
+const URL_VALUE = /\b[A-Za-z][A-Za-z0-9+.-]*:\/\/[^\s<>()]+/g;
 const DATE_LABELS = [
 	'due',
 	'start',
@@ -281,12 +282,23 @@ function extractMetadata(
 	const doFields = options.extractDates || options.extractDynamic;
 
 	const candidates: MetadataCandidate[] = [];
+	const urlRanges = [...text.matchAll(URL_VALUE)].map((match) => {
+		const start = match.index ?? 0;
+		return { start, end: start + match[0].length };
+	});
 
 	if (doTags) {
 		for (const match of text.matchAll(TAG_PATTERN)) {
 			const tag = match[1] ?? '';
 			if (tag !== '') {
 				const start = match.index ?? 0;
+				if (
+					urlRanges.some(
+						(range) => start < range.end && start + match[0].length > range.start,
+					)
+				) {
+					continue;
+				}
 				candidates.push({
 					start,
 					end: start + match[0].length,
@@ -304,7 +316,10 @@ function extractMetadata(
 			if (lowerKey === '' || /^(https?|ftp)$/.test(lowerKey)) {
 				continue;
 			}
-			const value = (match[2] ?? '').replace(/[,.;:!?]+$/g, '');
+			const rawValue = match[2] ?? '';
+			const value = isUrlValue(rawValue)
+				? rawValue
+				: rawValue.replace(/[,.;:!?]+$/g, '');
 			if (value === '') {
 				continue;
 			}
@@ -376,6 +391,10 @@ function extractMetadata(
 	name = name.replace(/\s+/g, ' ').trim();
 
 	return { name, tags, fields };
+}
+
+function isUrlValue(value: string): boolean {
+	return /^[A-Za-z][A-Za-z0-9+.-]*:\/\//.test(value);
 }
 
 function buildNoteContent(note: NoteSpec): string {
