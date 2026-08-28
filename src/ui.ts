@@ -99,6 +99,14 @@ class BasifyModal extends Modal {
 			cls: 'basify-warning',
 			text: 'Make sure you have a backup of your vault before continuing.',
 		});
+		const footer = this.contentEl.createDiv({ cls: 'basify-footer' });
+		const convertButton = footer.createEl('button', {
+			cls: 'mod-cta',
+			text: 'Convert',
+			attr: { type: 'button' },
+		});
+		convertButton.addEventListener('click', () => this.submit());
+		convertButton.focus();
 
 		new Setting(this.contentEl)
 			.setName('Output folder')
@@ -187,15 +195,6 @@ class BasifyModal extends Modal {
 			cls: 'basify-advanced-options',
 		});
 		this.renderAdvancedOptions();
-
-		const footer = this.contentEl.createDiv({ cls: 'basify-footer' });
-		footer
-			.createEl('button', {
-				cls: 'mod-cta',
-				text: 'Convert',
-				attr: { type: 'button' },
-			})
-			.addEventListener('click', () => this.submit());
 	}
 
 	private renderAdvancedOptions(): void {
