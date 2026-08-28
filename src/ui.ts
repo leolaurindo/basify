@@ -14,6 +14,7 @@ export interface BasifyPrompt {
 	isTaskList: boolean;
 	defaultFolder: string;
 	defaultBaseFolder: string;
+	initialColumns?: string[];
 	initial?: Partial<BasifyOptions>;
 }
 
@@ -54,7 +55,11 @@ class BasifyModal extends Modal {
 		resolve: (options: BasifyOptions | null) => void,
 	) {
 		super(app);
-		this.columns = prompt.columns;
+		this.columns =
+			!prompt.hasHeader &&
+			prompt.initialColumns?.length === prompt.columns.length
+				? [...prompt.initialColumns]
+				: [...prompt.columns];
 		this.hasHeader = prompt.hasHeader;
 		this.isTaskList = prompt.isTaskList;
 		this.defaultFolder = prompt.defaultFolder;
@@ -99,6 +104,14 @@ class BasifyModal extends Modal {
 			cls: 'basify-warning',
 			text: 'Make sure you have a backup of your vault before continuing.',
 		});
+		const footer = this.contentEl.createDiv({ cls: 'basify-footer' });
+		const convertButton = footer.createEl('button', {
+			cls: 'mod-cta',
+			text: 'Convert',
+			attr: { type: 'button' },
+		});
+		convertButton.addEventListener('click', () => this.submit());
+		convertButton.focus();
 
 		new Setting(this.contentEl)
 			.setName('Output folder')
@@ -187,15 +200,6 @@ class BasifyModal extends Modal {
 			cls: 'basify-advanced-options',
 		});
 		this.renderAdvancedOptions();
-
-		const footer = this.contentEl.createDiv({ cls: 'basify-footer' });
-		footer
-			.createEl('button', {
-				cls: 'mod-cta',
-				text: 'Convert',
-				attr: { type: 'button' },
-			})
-			.addEventListener('click', () => this.submit());
 	}
 
 	private renderAdvancedOptions(): void {

@@ -23,6 +23,14 @@ import {
 	shortHash,
 	shortenFilename,
 } from '../src/convert';
+import {
+	DEFAULT_MEMORY,
+	loadFileMemories,
+	MAX_FILE_MEMORIES,
+	removeFileMemory,
+	renameFileMemory,
+	saveFileMemory,
+} from '../src/memory';
 
 class FakeVault extends Vault {
 	store = new Map<string, string>();
@@ -148,6 +156,35 @@ function test(name: string, fn: () => void | Promise<void>): void {
 		}
 	});
 }
+
+test('file memories are bounded and maintained by file lifecycle', () => {
+	let memories = loadFileMemories(null);
+	for (let index = 0; index <= MAX_FILE_MEMORIES; index++) {
+		memories = saveFileMemory(memories, `Note ${index}.md`, {
+			...DEFAULT_MEMORY,
+			lastFolder: `Folder ${index}`,
+		});
+	}
+	if (Object.keys(memories).length !== MAX_FILE_MEMORIES) {
+		throw new Error('file memory limit was not applied');
+	}
+	if (memories['Note 0.md'] !== undefined) {
+		throw new Error('oldest file memory was retained');
+	}
+
+	memories = renameFileMemory(memories, 'Note 1.md', 'Renamed.md');
+	if (memories['Note 1.md'] !== undefined) {
+		throw new Error('old file path was retained');
+	}
+	if (memories['Renamed.md']?.lastFolder !== 'Folder 1') {
+		throw new Error('file memory was not migrated');
+	}
+
+	memories = removeFileMemory(memories, 'Renamed.md');
+	if (memories['Renamed.md'] !== undefined) {
+		throw new Error('deleted file memory was retained');
+	}
+});
 
 async function run(): Promise<void> {
 	for (const t of tests) {
@@ -354,6 +391,70 @@ test('dynamic field extraction turns key:value into fields', () => {
 	if (props['type']?.value !== 'task') throw new Error('type: ' + JSON.stringify(props));
 	if (props['due']?.value !== '2027-06-01') throw new Error('due');
 	if (props['start']?.value !== '2026-12-01') throw new Error('start');
+});
+
+test('dynamic field extraction keeps multi-word values until the next field', () => {
+	const sel = parseSelection(
+		'- prepare project: Multi word project owner: Ada Lovelace',
+	);
+	if (sel === null) throw new Error('no selection');
+	const input = buildConvertInput(sel, opts({ extractDynamic: true }));
+	const properties = input.notes[0]?.properties ?? {};
+	if (properties.project?.value !== 'Multi word project') {
+		throw new Error('project: ' + JSON.stringify(properties.project?.value));
+	}
+	if (properties.owner?.value !== 'Ada Lovelace') {
+		throw new Error('owner: ' + JSON.stringify(properties.owner?.value));
+	}
+	if (input.notes[0]?.name !== 'prepare') {
+		throw new Error('name: ' + input.notes[0]?.name);
+	}
+});
+
+test('dynamic field extraction keeps quoted key-like text in the value', () => {
+	const sel = parseSelection(
+		'- resource title: "Research: a practical guide" owner: Ada Lovelace',
+	);
+	if (sel === null) throw new Error('no selection');
+	const input = buildConvertInput(sel, opts({ extractDynamic: true }));
+	const properties = input.notes[0]?.properties ?? {};
+	if (properties.title?.value !== 'Research: a practical guide') {
+		throw new Error('title: ' + JSON.stringify(properties.title?.value));
+	}
+	if (properties.owner?.value !== 'Ada Lovelace') {
+		throw new Error('owner: ' + JSON.stringify(properties.owner?.value));
+	}
+	if ('Research' in properties) {
+		throw new Error('quoted text became a field');
+	}
+});
+
+test('dynamic field extraction supports escaped quotes', () => {
+	const sel = parseSelection('- resource title: "A \\"quoted\\" guide" owner: Ada');
+	if (sel === null) throw new Error('no selection');
+	const input = buildConvertInput(sel, opts({ extractDynamic: true }));
+	const properties = input.notes[0]?.properties ?? {};
+	if (properties.title?.value !== 'A "quoted" guide') {
+		throw new Error('title: ' + JSON.stringify(properties.title?.value));
+	}
+});
+
+test('dynamic field extraction does not split URL values', () => {
+	const sel = parseSelection(
+		'- resource link: https://www.example.com/path?query=one:two title: Useful link',
+	);
+	if (sel === null) throw new Error('no selection');
+	const input = buildConvertInput(sel, opts({ extractDynamic: true }));
+	const properties = input.notes[0]?.properties ?? {};
+	if (
+		properties.link?.value !==
+		'https://www.example.com/path?query=one:two'
+	) {
+		throw new Error('link: ' + JSON.stringify(properties.link?.value));
+	}
+	if (properties.title?.value !== 'Useful link') {
+		throw new Error('title: ' + JSON.stringify(properties.title?.value));
+	}
 });
 
 test('dynamic extraction preserves complete URL values', () => {

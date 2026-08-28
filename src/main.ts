@@ -19,15 +19,51 @@ import {
 	DEFAULT_MEMORY,
 	DEFAULT_SETTINGS,
 } from './settings';
+import {
+	BasifyFileMemories,
+	loadFileMemories,
+	removeFileMemory,
+	renameFileMemory,
+	saveFileMemory,
+} from './memory';
 import { promptBasify } from './ui';
 
 export default class BasifyPlugin extends Plugin {
 	settings!: BasifySettings;
 	memory!: BasifyMemory;
+	fileMemories!: BasifyFileMemories;
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
 		this.addSettingTab(new BasifySettingTab(this.app, this));
+		this.registerEvent(
+			this.app.vault.on('rename', (file, oldPath) => {
+				if (!(file instanceof TFile)) {
+					return;
+				}
+				const fileMemories = renameFileMemory(
+					this.fileMemories,
+					oldPath,
+					file.path,
+				);
+				if (fileMemories !== this.fileMemories) {
+					this.fileMemories = fileMemories;
+					void this.saveSettings();
+				}
+			}),
+		);
+		this.registerEvent(
+			this.app.vault.on('delete', (file) => {
+				if (!(file instanceof TFile)) {
+					return;
+				}
+				const fileMemories = removeFileMemory(this.fileMemories, file.path);
+				if (fileMemories !== this.fileMemories) {
+					this.fileMemories = fileMemories;
+					void this.saveSettings();
+				}
+			}),
+		);
 
 		this.addCommand({
 			id: 'convert-selection-to-base',
@@ -40,14 +76,23 @@ export default class BasifyPlugin extends Plugin {
 
 	async loadSettings(): Promise<void> {
 		const data = (await this.loadData()) as
-			| { settings?: Partial<BasifySettings>; memory?: Partial<BasifyMemory> }
+			| {
+					settings?: Partial<BasifySettings>;
+					memory?: Partial<BasifyMemory>;
+					fileMemories?: unknown;
+			  }
 			| null;
 		this.settings = { ...DEFAULT_SETTINGS, ...data?.settings };
 		this.memory = { ...DEFAULT_MEMORY, ...data?.memory };
+		this.fileMemories = loadFileMemories(data?.fileMemories);
 	}
 
 	async saveSettings(): Promise<void> {
-		await this.saveData({ settings: this.settings, memory: this.memory });
+		await this.saveData({
+			settings: this.settings,
+			memory: this.memory,
+			fileMemories: this.fileMemories,
+		});
 	}
 
 	private async convertSelection(editor: Editor): Promise<void> {
@@ -58,34 +103,39 @@ export default class BasifyPlugin extends Plugin {
 			return;
 		}
 
+		const sourceFile = this.activeFile();
+		const fileMemory =
+			sourceFile === null ? undefined : this.fileMemories[sourceFile.path];
+		const memory = fileMemory ?? this.memory;
 		const options = await promptBasify(this.app, {
 			columns: selection.type === 'table' ? selection.columns : [],
 			hasHeader:
 				selection.type === 'table' ? selection.hasHeader : true,
 			isTaskList: isTaskList(selection),
-			defaultFolder: this.defaultOutputFolder(),
-			defaultBaseFolder: this.defaultBaseFolder(),
+			defaultFolder: this.defaultOutputFolder(fileMemory),
+			defaultBaseFolder: this.defaultBaseFolder(fileMemory),
+			initialColumns: memory.lastColumns,
 			initial: {
-				nameColumn: this.memory.lastNameColumn,
-				statusField: this.memory.lastStatusField,
-				mode: this.memory.lastMode,
-				embedBase: this.memory.lastEmbedBase,
-				extractTags: this.memory.lastExtractTags,
-				extractDates: this.memory.lastExtractDates,
-				extractDynamic: this.memory.lastExtractDynamic,
-				nameSeparator: this.memory.lastNameSeparator,
-				fileNameField: this.memory.lastFileNameField,
-				fileNameFieldSeparator: this.memory.lastFileNameFieldSeparator,
-				lowercaseNames: this.memory.lastLowercaseNames,
-				lowercaseNameField: this.memory.lastLowercaseNameField,
-				lowercaseYamlFields: this.memory.lastLowercaseYamlFields,
-				sourceMode: this.memory.lastSourceMode,
-				conflictMode: this.memory.lastConflictMode,
-				conflictSuffix: this.memory.lastConflictSuffix,
-				repeatedFieldMode: this.memory.lastRepeatedFieldMode,
-				longFilenameMode: this.memory.lastLongFilenameMode,
-				maxFilenameLength: this.memory.lastMaxFilenameLength,
-				advancedOptions: this.memory.lastAdvancedOptions,
+				nameColumn: memory.lastNameColumn,
+				statusField: memory.lastStatusField,
+				mode: memory.lastMode,
+				embedBase: memory.lastEmbedBase,
+				extractTags: memory.lastExtractTags,
+				extractDates: memory.lastExtractDates,
+				extractDynamic: memory.lastExtractDynamic,
+				nameSeparator: memory.lastNameSeparator,
+				fileNameField: memory.lastFileNameField,
+				fileNameFieldSeparator: memory.lastFileNameFieldSeparator,
+				lowercaseNames: memory.lastLowercaseNames,
+				lowercaseNameField: memory.lastLowercaseNameField,
+				lowercaseYamlFields: memory.lastLowercaseYamlFields,
+				sourceMode: memory.lastSourceMode,
+				conflictMode: memory.lastConflictMode,
+				conflictSuffix: memory.lastConflictSuffix,
+				repeatedFieldMode: memory.lastRepeatedFieldMode,
+				longFilenameMode: memory.lastLongFilenameMode,
+				maxFilenameLength: memory.lastMaxFilenameLength,
+				advancedOptions: memory.lastAdvancedOptions,
 			},
 		});
 		if (options === null) {
@@ -95,6 +145,7 @@ export default class BasifyPlugin extends Plugin {
 		this.memory = {
 			lastFolder: options.folder,
 			lastBaseFolder: options.baseFolder,
+			lastColumns: options.columns,
 			lastNameColumn: options.nameColumn ?? 0,
 			lastStatusField: options.statusField,
 			lastMode: options.mode,
@@ -116,6 +167,13 @@ export default class BasifyPlugin extends Plugin {
 			lastMaxFilenameLength: options.maxFilenameLength ?? 120,
 			lastAdvancedOptions: options.advancedOptions ?? false,
 		};
+		if (sourceFile !== null) {
+			this.fileMemories = saveFileMemory(
+				this.fileMemories,
+				sourceFile.path,
+				this.memory,
+			);
+		}
 		await this.saveSettings();
 
 		try {
@@ -191,7 +249,10 @@ export default class BasifyPlugin extends Plugin {
 		}
 	}
 
-	private defaultOutputFolder(): string {
+	private defaultOutputFolder(fileMemory?: BasifyMemory): string {
+		if (fileMemory !== undefined) {
+			return fileMemory.lastFolder;
+		}
 		switch (this.settings.outputFolderMode) {
 			case 'fixed':
 				return this.settings.fixedOutputFolder.trim() || this.suggestedFolder();
@@ -202,7 +263,10 @@ export default class BasifyPlugin extends Plugin {
 		}
 	}
 
-	private defaultBaseFolder(): string {
+	private defaultBaseFolder(fileMemory?: BasifyMemory): string {
+		if (fileMemory !== undefined) {
+			return fileMemory.lastBaseFolder;
+		}
 		switch (this.settings.baseFolderMode) {
 			case 'fixed':
 				return this.settings.fixedBaseFolder.trim() || this.activeFolder();
@@ -214,8 +278,8 @@ export default class BasifyPlugin extends Plugin {
 	}
 
 	private suggestedFolder(): string {
-		const file = this.app.workspace.getActiveViewOfType(MarkdownView)?.file;
-		if (file === undefined || file === null) {
+		const file = this.activeFile();
+		if (file === null) {
 			return '';
 		}
 		const parent = file.parent?.path ?? '';
@@ -223,8 +287,12 @@ export default class BasifyPlugin extends Plugin {
 	}
 
 	private activeFolder(): string {
-		const file = this.app.workspace.getActiveViewOfType(MarkdownView)?.file;
+		const file = this.activeFile();
 		return file?.parent?.path ?? '';
+	}
+
+	private activeFile(): TFile | null {
+		return this.app.workspace.getActiveViewOfType(MarkdownView)?.file ?? null;
 	}
 }
 

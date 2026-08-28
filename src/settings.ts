@@ -1,10 +1,5 @@
 import { App, PluginSettingTab, SettingDefinitionItem } from 'obsidian';
 import type BasifyPlugin from './main';
-import type {
-	ConflictModeValue,
-	LongFilenameMode,
-	RepeatedFieldMode,
-} from './convert';
 
 export type FolderMode = 'folder' | 'last' | 'fixed';
 
@@ -22,55 +17,8 @@ export const DEFAULT_SETTINGS: BasifySettings = {
 	fixedBaseFolder: '',
 };
 
-export interface BasifyMemory {
-	lastFolder: string;
-	lastBaseFolder: string;
-	lastNameColumn: number;
-	lastStatusField: string;
-	lastMode: 'file' | 'codeblock' | 'none';
-	lastEmbedBase: boolean;
-	lastExtractTags: boolean;
-	lastExtractDates: boolean;
-	lastExtractDynamic: boolean;
-	lastNameSeparator: 'space' | 'dash' | 'underscore';
-	lastFileNameField: string;
-	lastFileNameFieldSeparator: 'space' | 'dash' | 'underscore';
-	lastLowercaseNames: boolean;
-	lastLowercaseNameField: boolean;
-	lastLowercaseYamlFields: boolean;
-	lastSourceMode: 'keep' | 'converted' | 'all';
-	lastConflictMode: ConflictModeValue;
-	lastConflictSuffix: string;
-	lastRepeatedFieldMode: RepeatedFieldMode;
-	lastLongFilenameMode: LongFilenameMode;
-	lastMaxFilenameLength: number;
-	lastAdvancedOptions: boolean;
-}
-
-export const DEFAULT_MEMORY: BasifyMemory = {
-	lastFolder: '',
-	lastBaseFolder: '',
-	lastNameColumn: 0,
-	lastStatusField: 'status',
-	lastMode: 'file',
-	lastEmbedBase: false,
-	lastExtractTags: true,
-	lastExtractDates: true,
-	lastExtractDynamic: false,
-	lastNameSeparator: 'space',
-	lastFileNameField: '',
-	lastFileNameFieldSeparator: 'space',
-	lastLowercaseNames: false,
-	lastLowercaseNameField: false,
-	lastLowercaseYamlFields: false,
-	lastSourceMode: 'converted',
-	lastConflictMode: 'skip',
-	lastConflictSuffix: 'copy',
-	lastRepeatedFieldMode: 'list',
-	lastLongFilenameMode: 'shorten',
-	lastMaxFilenameLength: 120,
-	lastAdvancedOptions: false,
-};
+export { DEFAULT_MEMORY } from './memory';
+export type { BasifyMemory } from './memory';
 
 const FOLDER_OPTIONS: Record<string, string> = {
 	folder: 'Same folder as the active note',
