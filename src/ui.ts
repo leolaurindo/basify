@@ -14,6 +14,7 @@ export interface BasifyPrompt {
 	isTaskList: boolean;
 	defaultFolder: string;
 	defaultBaseFolder: string;
+	initialColumns?: string[];
 	initial?: Partial<BasifyOptions>;
 }
 
@@ -54,7 +55,11 @@ class BasifyModal extends Modal {
 		resolve: (options: BasifyOptions | null) => void,
 	) {
 		super(app);
-		this.columns = prompt.columns;
+		this.columns =
+			!prompt.hasHeader &&
+			prompt.initialColumns?.length === prompt.columns.length
+				? [...prompt.initialColumns]
+				: [...prompt.columns];
 		this.hasHeader = prompt.hasHeader;
 		this.isTaskList = prompt.isTaskList;
 		this.defaultFolder = prompt.defaultFolder;

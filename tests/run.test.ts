@@ -23,6 +23,14 @@ import {
 	shortHash,
 	shortenFilename,
 } from '../src/convert';
+import {
+	DEFAULT_MEMORY,
+	loadFileMemories,
+	MAX_FILE_MEMORIES,
+	removeFileMemory,
+	renameFileMemory,
+	saveFileMemory,
+} from '../src/memory';
 
 class FakeVault extends Vault {
 	store = new Map<string, string>();
@@ -148,6 +156,35 @@ function test(name: string, fn: () => void | Promise<void>): void {
 		}
 	});
 }
+
+test('file memories are bounded and maintained by file lifecycle', () => {
+	let memories = loadFileMemories(null);
+	for (let index = 0; index <= MAX_FILE_MEMORIES; index++) {
+		memories = saveFileMemory(memories, `Note ${index}.md`, {
+			...DEFAULT_MEMORY,
+			lastFolder: `Folder ${index}`,
+		});
+	}
+	if (Object.keys(memories).length !== MAX_FILE_MEMORIES) {
+		throw new Error('file memory limit was not applied');
+	}
+	if (memories['Note 0.md'] !== undefined) {
+		throw new Error('oldest file memory was retained');
+	}
+
+	memories = renameFileMemory(memories, 'Note 1.md', 'Renamed.md');
+	if (memories['Note 1.md'] !== undefined) {
+		throw new Error('old file path was retained');
+	}
+	if (memories['Renamed.md']?.lastFolder !== 'Folder 1') {
+		throw new Error('file memory was not migrated');
+	}
+
+	memories = removeFileMemory(memories, 'Renamed.md');
+	if (memories['Renamed.md'] !== undefined) {
+		throw new Error('deleted file memory was retained');
+	}
+});
 
 async function run(): Promise<void> {
 	for (const t of tests) {
