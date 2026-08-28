@@ -78,7 +78,7 @@ const ILLEGAL_FILENAME_CHARS = /[\\/:*?"<>|#^[\]]/g;
 const TAG_PATTERN = /#([A-Za-z0-9_/-]+)/g;
 const LABELED_DATE = /\b([A-Za-z]+)\s*:\s*(\d{4}-\d{2}-\d{2})\b/g;
 const AT_DATE = /@(\d{4}-\d{2}-\d{2})\b/g;
-const KEY_VALUE = /\b([A-Za-z][A-Za-z0-9_-]*)\s*:\s*([^\s]+)/g;
+const KEY_VALUE = /\b([A-Za-z][A-Za-z0-9_-]*)\s*:/g;
 const URL_VALUE = /\b[A-Za-z][A-Za-z0-9+.-]*:\/\/[^\s<>()]+/g;
 const DATE_LABELS = [
 	'due',
@@ -478,25 +478,40 @@ function extractMetadata(
 	}
 
 	if (options.extractDynamic) {
-		for (const match of text.matchAll(KEY_VALUE)) {
+		const fields = [...text.matchAll(KEY_VALUE)].flatMap((match) => {
 			const key = match[1] ?? '';
+			const start = match.index ?? 0;
+			const valueStart = start + match[0].length;
 			const lowerKey = key.toLowerCase();
-			if (lowerKey === '' || /^(https?|ftp)$/.test(lowerKey)) {
+			if (
+				lowerKey === '' ||
+				/^(https?|ftp)$/.test(lowerKey) ||
+				text.slice(valueStart, valueStart + 2) === '//' ||
+				urlRanges.some((range) => start >= range.start && start < range.end)
+			) {
+				return [];
+			}
+			return [{ key, start, valueStart }];
+		});
+		for (const [index, field] of fields.entries()) {
+			const next = fields[index + 1];
+			const rawValue = text
+				.slice(field.valueStart, next?.start ?? text.length)
+				.trim();
+			if (rawValue === '') {
 				continue;
 			}
-			const rawValue = match[2] ?? '';
 			const value = isUrlValue(rawValue)
 				? rawValue
 				: rawValue.replace(/[,.;:!?]+$/g, '');
 			if (value === '') {
 				continue;
 			}
-			const start = match.index ?? 0;
 			candidates.push({
-				start,
-				end: start + match[0].length,
+				start: field.start,
+				end: next?.start ?? text.length,
 				type: 'field',
-				label: key,
+				label: field.key,
 				value,
 				repeatable: true,
 			});

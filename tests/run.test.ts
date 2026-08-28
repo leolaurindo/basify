@@ -393,6 +393,42 @@ test('dynamic field extraction turns key:value into fields', () => {
 	if (props['start']?.value !== '2026-12-01') throw new Error('start');
 });
 
+test('dynamic field extraction keeps multi-word values until the next field', () => {
+	const sel = parseSelection(
+		'- prepare project: Multi word project owner: Ada Lovelace',
+	);
+	if (sel === null) throw new Error('no selection');
+	const input = buildConvertInput(sel, opts({ extractDynamic: true }));
+	const properties = input.notes[0]?.properties ?? {};
+	if (properties.project?.value !== 'Multi word project') {
+		throw new Error('project: ' + JSON.stringify(properties.project?.value));
+	}
+	if (properties.owner?.value !== 'Ada Lovelace') {
+		throw new Error('owner: ' + JSON.stringify(properties.owner?.value));
+	}
+	if (input.notes[0]?.name !== 'prepare') {
+		throw new Error('name: ' + input.notes[0]?.name);
+	}
+});
+
+test('dynamic field extraction does not split URL values', () => {
+	const sel = parseSelection(
+		'- resource link: https://www.example.com/path?query=one:two title: Useful link',
+	);
+	if (sel === null) throw new Error('no selection');
+	const input = buildConvertInput(sel, opts({ extractDynamic: true }));
+	const properties = input.notes[0]?.properties ?? {};
+	if (
+		properties.link?.value !==
+		'https://www.example.com/path?query=one:two'
+	) {
+		throw new Error('link: ' + JSON.stringify(properties.link?.value));
+	}
+	if (properties.title?.value !== 'Useful link') {
+		throw new Error('title: ' + JSON.stringify(properties.title?.value));
+	}
+});
+
 test('dynamic extraction preserves complete URL values', () => {
 	const sel = parseSelection(
 		'- project url:https://example.com/a_b~c/*?x=1#section',
