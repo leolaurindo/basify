@@ -411,6 +411,34 @@ test('dynamic field extraction keeps multi-word values until the next field', ()
 	}
 });
 
+test('dynamic field extraction keeps quoted key-like text in the value', () => {
+	const sel = parseSelection(
+		'- resource title: "Research: a practical guide" owner: Ada Lovelace',
+	);
+	if (sel === null) throw new Error('no selection');
+	const input = buildConvertInput(sel, opts({ extractDynamic: true }));
+	const properties = input.notes[0]?.properties ?? {};
+	if (properties.title?.value !== 'Research: a practical guide') {
+		throw new Error('title: ' + JSON.stringify(properties.title?.value));
+	}
+	if (properties.owner?.value !== 'Ada Lovelace') {
+		throw new Error('owner: ' + JSON.stringify(properties.owner?.value));
+	}
+	if ('Research' in properties) {
+		throw new Error('quoted text became a field');
+	}
+});
+
+test('dynamic field extraction supports escaped quotes', () => {
+	const sel = parseSelection('- resource title: "A \\"quoted\\" guide" owner: Ada');
+	if (sel === null) throw new Error('no selection');
+	const input = buildConvertInput(sel, opts({ extractDynamic: true }));
+	const properties = input.notes[0]?.properties ?? {};
+	if (properties.title?.value !== 'A "quoted" guide') {
+		throw new Error('title: ' + JSON.stringify(properties.title?.value));
+	}
+});
+
 test('dynamic field extraction does not split URL values', () => {
 	const sel = parseSelection(
 		'- resource link: https://www.example.com/path?query=one:two title: Useful link',

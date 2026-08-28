@@ -493,28 +493,59 @@ function extractMetadata(
 			}
 			return [{ key, start, valueStart }];
 		});
-		for (const [index, field] of fields.entries()) {
-			const next = fields[index + 1];
-			const rawValue = text
-				.slice(field.valueStart, next?.start ?? text.length)
-				.trim();
+		for (let index = 0; index < fields.length; index++) {
+			const field = fields[index];
+			if (field === undefined) {
+				continue;
+			}
+			const firstValueCharacter = skipWhitespace(text, field.valueStart);
+			const quote = text[firstValueCharacter];
+			const quoteEnd =
+				quote === '"' || quote === "'"
+					? closingQuote(text, firstValueCharacter, quote)
+					: -1;
+			let nextIndex = index + 1;
+			let rawValue: string;
+			let valueEnd: number;
+			if (quoteEnd !== -1) {
+				rawValue = unescapeQuotedValue(
+					text.slice(firstValueCharacter + 1, quoteEnd),
+					quote as '"' | "'",
+				);
+				valueEnd = quoteEnd + 1;
+				while (
+					fields[nextIndex] !== undefined &&
+					(fields[nextIndex]?.start ?? valueEnd) < valueEnd
+				) {
+					nextIndex++;
+				}
+			} else {
+				const next = fields[nextIndex];
+				rawValue = text
+					.slice(field.valueStart, next?.start ?? text.length)
+					.trim();
+				valueEnd = next?.start ?? text.length;
+			}
 			if (rawValue === '') {
+				index = nextIndex - 1;
 				continue;
 			}
 			const value = isUrlValue(rawValue)
 				? rawValue
 				: rawValue.replace(/[,.;:!?]+$/g, '');
 			if (value === '') {
+				index = nextIndex - 1;
 				continue;
 			}
 			candidates.push({
 				start: field.start,
-				end: next?.start ?? text.length,
+				end: valueEnd,
 				type: 'field',
 				label: field.key,
 				value,
 				repeatable: true,
 			});
+			index = nextIndex - 1;
 		}
 	} else if (doFields) {
 		for (const match of text.matchAll(LABELED_DATE)) {
@@ -600,6 +631,31 @@ function fieldValueText(value: string | string[]): string {
 
 function isUrlValue(value: string): boolean {
 	return /^[A-Za-z][A-Za-z0-9+.-]*:\/\//.test(value);
+}
+
+function skipWhitespace(text: string, start: number): number {
+	let index = start;
+	while (/\s/.test(text[index] ?? '')) {
+		index++;
+	}
+	return index;
+}
+
+function closingQuote(text: string, start: number, quote: string): number {
+	for (let index = start + 1; index < text.length; index++) {
+		if (text[index] === '\\') {
+			index++;
+			continue;
+		}
+		if (text[index] === quote) {
+			return index;
+		}
+	}
+	return -1;
+}
+
+function unescapeQuotedValue(value: string, quote: '"' | "'"): string {
+	return value.replace(new RegExp(`\\\\([\\\\${quote}])`, 'g'), '$1');
 }
 
 function buildNoteContent(note: NoteSpec): string {

@@ -84,7 +84,7 @@ Everything you can configure in the dialog:
 
 - **Extract tags** — `#tag` (and nested `#tag/sub`) become a `tags` list property.
 - **Extract dates** — labeled dates like `due:2025-01-01`, `start:2026-08-01`, or `@2023-04-05` become fields named after the label (`due`, `start`, `date`, ...). An unlisted label (e.g. `meeting:2026-01-01`) falls back to a `date` field — only the first one; extra ones stay in the name.
-- **Dynamic field extraction** — every `key:value` pair becomes a field (so `type: task` → a `type` field). It supersedes the tag and date options: when it's on, tags and dates are extracted too.
+- **Dynamic field extraction** — every `key:value` pair becomes a field (so `type: task` → a `type` field); quote multi-word values containing `key:` text, such as `title: "Research: a guide"`. It supersedes the tag and date options: when it's on, tags and dates are extracted too.
 
 - **Lowercase property names** — use lowercase letters in the frontmatter property names (for example `Publication Year` → `publication_year`).
 
