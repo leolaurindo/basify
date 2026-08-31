@@ -4,6 +4,8 @@ Convert a selected **list**, **task list**, or **table** into an [Obsidian base]
 
 Each list item, checkbox, or table row becomes its own note with frontmatter yaml. Basify can create a base that shows those notes as a table, or only create the base-ready notes.
 
+Consider leaving a ⭐ on [github](https://github.com/leolaurindo/basify) if you find basify useful.
+
 ## Usage
 
 1. **Select** a list, task list or a table in the editor (or place the cursor inside one).
