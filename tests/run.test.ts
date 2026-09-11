@@ -31,6 +31,7 @@ import {
 	renameFileMemory,
 	saveFileMemory,
 } from '../src/memory';
+import { parse as parseYaml } from 'yaml';
 
 class FakeVault extends Vault {
 	store = new Map<string, string>();
@@ -320,13 +321,100 @@ test('user scenario: task list with tags and dates', async () => {
 	}
 
 	const tagNote = vault.store.get('Books/some more.md') ?? '';
-	if (!tagNote.includes('tags: ["some-tag"]')) throw new Error('tags: ' + tagNote);
+	if (!tagNote.includes('tags:\n  - some-tag')) throw new Error('tags: ' + tagNote);
 	if (!tagNote.includes('status: true')) throw new Error('status: ' + tagNote);
 
 	const dateNote = vault.store.get('Books/some more 2.md') ?? '';
-	if (!dateNote.includes('due: "2025-01-01"')) throw new Error('due: ' + dateNote);
-	if (!dateNote.includes('date: "2023-04-05"')) throw new Error('date: ' + dateNote);
+	if (!dateNote.includes('due: 2025-01-01')) throw new Error('due: ' + dateNote);
+	if (!dateNote.includes('date: 2023-04-05')) throw new Error('date: ' + dateNote);
 	if (!dateNote.includes('status: false')) throw new Error('status: ' + dateNote);
+});
+
+test('writes idiomatic YAML while quoting ambiguous text', async () => {
+	const { app, vault } = makeApp();
+	const selection = parseSelection(
+		'- YAML #personal #123 description: A New Hope title: "Research: a guide" person: "Smith, John" author: Ada author: Bob contributors: [Ada, "Smith, John", "Research: guide"] flags: [true, false] years: [2025, 2026] dates: [2026-01-01, 2026-02-01] due:2025-01-01 link: "[[Episode IV]]"',
+	);
+	if (selection === null) throw new Error('no selection');
+	const input = buildConvertInput(selection, opts({ extractDynamic: true }));
+	const parsed = input.notes[0]?.properties;
+	if (parsed?.title?.value !== 'Research: a guide') throw new Error('input title');
+	if (!Array.isArray(parsed?.author?.value) || parsed.author.value.join(',') !== 'Ada,Bob') {
+		throw new Error('input authors: ' + JSON.stringify(parsed?.author?.value));
+	}
+	if (!Array.isArray(parsed?.tags?.value) || parsed.tags.value.join(',') !== 'personal,123') {
+		throw new Error('input tags: ' + JSON.stringify(parsed?.tags?.value));
+	}
+	if (
+		!Array.isArray(parsed?.contributors?.value) ||
+		parsed.contributors.value.join('|') !== 'Ada|Smith, John|Research: guide'
+	) {
+		throw new Error('input contributors: ' + JSON.stringify(parsed?.contributors?.value));
+	}
+	if ('Research' in (parsed ?? {})) throw new Error('list item became a field');
+	if (!Array.isArray(parsed?.flags?.value) || parsed.flags.value.join(',') !== 'true,false') {
+		throw new Error('input flags: ' + JSON.stringify(parsed?.flags?.value));
+	}
+	await createNotes(app as never, input);
+
+	const content = vault.store.get('Books/YAML.md') ?? '';
+	if (!content.includes('description: A New Hope')) throw new Error('description: ' + content);
+	if (!content.includes('due: 2025-01-01')) throw new Error('due: ' + content);
+	if (!content.includes('tags:\n  - personal\n  - "123"')) {
+		throw new Error('tags: ' + content);
+	}
+	if (!content.includes('author:\n  - Ada\n  - Bob')) throw new Error('author: ' + content);
+	if (!content.includes('contributors:\n  - Ada\n  - Smith, John\n  - "Research: guide"')) {
+		throw new Error('contributors: ' + content);
+	}
+	if (!content.includes('flags:\n  - true\n  - false')) throw new Error('flags: ' + content);
+	if (!content.includes('years:\n  - 2025\n  - 2026')) throw new Error('years: ' + content);
+	if (!content.includes('dates:\n  - 2026-01-01\n  - 2026-02-01')) {
+		throw new Error('dates: ' + content);
+	}
+	if (!content.includes('link: "[[Episode IV]]"')) throw new Error('link: ' + content);
+	if (!content.includes('title: "Research: a guide"')) throw new Error('title: ' + content);
+
+	const yaml = content.match(/^---\n([\s\S]*?)\n---/)?.[1];
+	if (yaml === undefined) throw new Error('missing frontmatter');
+	const properties = parseYaml(yaml) as Record<string, unknown>;
+	if (properties.description !== 'A New Hope') throw new Error('parsed description');
+	if (properties.due !== '2025-01-01') throw new Error('parsed date');
+	if (!Array.isArray(properties.tags) || properties.tags.join(',') !== 'personal,123') {
+		throw new Error('parsed tags: ' + JSON.stringify(properties.tags));
+	}
+	if (properties.tags.some((tag) => typeof tag !== 'string')) {
+		throw new Error('tag type changed: ' + JSON.stringify(properties.tags));
+	}
+	if (!Array.isArray(properties.author) || properties.author.join(',') !== 'Ada,Bob') {
+		throw new Error('parsed authors: ' + JSON.stringify(properties.author));
+	}
+	if (
+		!Array.isArray(properties.contributors) ||
+		properties.contributors.join('|') !== 'Ada|Smith, John|Research: guide'
+	) {
+		throw new Error('parsed contributors: ' + JSON.stringify(properties.contributors));
+	}
+	if (
+		!Array.isArray(properties.flags) ||
+		properties.flags.length !== 2 ||
+		properties.flags[0] !== true ||
+		properties.flags[1] !== false
+	) {
+		throw new Error('parsed flags: ' + JSON.stringify(properties.flags));
+	}
+	if (!Array.isArray(properties.years) || properties.years.join(',') !== '2025,2026') {
+		throw new Error('parsed years: ' + JSON.stringify(properties.years));
+	}
+	if (properties.years.some((year) => typeof year !== 'number')) {
+		throw new Error('year type changed: ' + JSON.stringify(properties.years));
+	}
+	if (!Array.isArray(properties.dates) || properties.dates.join(',') !== '2026-01-01,2026-02-01') {
+		throw new Error('parsed dates: ' + JSON.stringify(properties.dates));
+	}
+	if (properties.person !== 'Smith, John') throw new Error('parsed person');
+	if (properties.title !== 'Research: a guide') throw new Error('parsed title');
+	if ('Research' in properties) throw new Error('title became a nested field');
 });
 
 test('extracts labeled and @ dates into fields', () => {
@@ -426,6 +514,18 @@ test('dynamic field extraction keeps quoted key-like text in the value', () => {
 	}
 	if ('Research' in properties) {
 		throw new Error('quoted text became a field');
+	}
+});
+
+test('bracket list syntax only applies to dynamic fields', () => {
+	const sel = parseSelection('- Keep [Ada, Bob] together');
+	if (sel === null) throw new Error('no selection');
+	const input = buildConvertInput(sel, opts({ extractDynamic: true }));
+	if (input.notes[0]?.name !== 'Keep Ada, Bob together') {
+		throw new Error('name: ' + input.notes[0]?.name);
+	}
+	if (Object.keys(input.notes[0]?.properties ?? {}).length !== 0) {
+		throw new Error('standalone brackets became a property');
 	}
 });
 
