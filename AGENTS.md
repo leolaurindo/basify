@@ -267,3 +267,18 @@ this.registerInterval(
 - Developer policies: https://docs.obsidian.md/Developer+policies
 - Plugin guidelines: https://docs.obsidian.md/Plugins/Releasing/Plugin+guidelines
 - Style guide: https://help.obsidian.md/style-guide
+
+## Basify-specific context
+
+- Basify converts selected lists, task lists, and tables into notes with YAML frontmatter, optionally generating an Obsidian `.base` file or inline base block.
+- The main command ID is `convert-selection-to-base`; keep it stable.
+- `src/main.ts` owns plugin lifecycle and orchestrates conversion.
+- `src/selection.ts` handles editor block detection, list/table parsing, and source cleanup.
+- `src/convert.ts` handles metadata extraction, note creation, conflict handling, YAML generation, filename normalization, and base generation.
+- `src/ui.ts` contains the conversion dialog.
+- `src/settings.ts` contains persisted plugin settings; `src/memory.ts` stores last-used global and per-file conversion options.
+- Existing notes are never deleted. Conflict modes may skip, create a suffixed copy, or merge frontmatter while preserving the existing note body.
+- Source cleanup must preserve skipped entries and their children unless the user explicitly chooses to remove all entries.
+- User-visible behavior changes should be reflected in `README.md`.
+- Tests use the lightweight custom harness in `tests/run.test.ts`; run them with `npm run test`.
+- Prefer testing conversion behavior in `selection.ts` and `convert.ts` without requiring Obsidian UI objects.
