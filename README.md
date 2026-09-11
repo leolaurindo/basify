@@ -90,6 +90,10 @@ Everything you can configure in the dialog:
 
 - **Lowercase property names** — use lowercase letters in the frontmatter property names (for example `Publication Year` → `publication_year`).
 
+#### Dynamic field values
+
+Use brackets for an explicit list: `authors: [Ada, Bob]`. Commas inside quoted items are preserved, as in `authors: [Ada, "Smith, John"]`. Without brackets, comma-containing values stay text; quote the whole value when needed, for example `author: "Smith, John"`. Numbers, booleans, and `YYYY-MM-DD` dates in lists use their native frontmatter forms.
+
 ### Task lists
 
 - **Status field** — property name for the checkbox state (default `status`).
@@ -127,7 +131,7 @@ Values are converted with minimal parsing, so Obsidian keeps useful types:
 
 - Numbers (e.g. `1867`) stay numbers.
 - The words `true` and `false` become booleans; checkbox lists always produce a boolean `status`.
-- Everything else stays plain text.
+- Dates use Obsidian's `YYYY-MM-DD` format, lists use one item per line, and ordinary text stays unquoted. Values are quoted only when YAML syntax requires it.
 
 For better cleaning and normalization of the generated frontmatter, install the [Linter](https://github.com/platers/obsidian-linter) community plugin and run it after converting.
 

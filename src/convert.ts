@@ -438,7 +438,7 @@ type MetadataCandidate =
 			end: number;
 			type: 'field';
 			label: string;
-			value: string;
+			value: string | string[];
 			repeatable?: boolean;
 	  };
 
@@ -498,48 +498,35 @@ function extractMetadata(
 			if (field === undefined) {
 				continue;
 			}
-			const firstValueCharacter = skipWhitespace(text, field.valueStart);
-			const quote = text[firstValueCharacter];
-			const quoteEnd =
-				quote === '"' || quote === "'"
-					? closingQuote(text, firstValueCharacter, quote)
-					: -1;
 			let nextIndex = index + 1;
-			let rawValue: string;
-			let valueEnd: number;
-			if (quoteEnd !== -1) {
-				rawValue = unescapeQuotedValue(
-					text.slice(firstValueCharacter + 1, quoteEnd),
-					quote as '"' | "'",
-				);
-				valueEnd = quoteEnd + 1;
-				while (
-					fields[nextIndex] !== undefined &&
-					(fields[nextIndex]?.start ?? valueEnd) < valueEnd
-				) {
-					nextIndex++;
-				}
-			} else {
-				const next = fields[nextIndex];
-				rawValue = text
-					.slice(field.valueStart, next?.start ?? text.length)
-					.trim();
-				valueEnd = next?.start ?? text.length;
+			const parsed = parseDynamicValue(
+				text,
+				field.valueStart,
+				fields[nextIndex]?.start ?? text.length,
+			);
+			while (
+				fields[nextIndex] !== undefined &&
+				(fields[nextIndex]?.start ?? parsed.end) < parsed.end
+			) {
+				nextIndex++;
 			}
+			const rawValue = parsed.value;
 			if (rawValue === '') {
 				index = nextIndex - 1;
 				continue;
 			}
-			const value = isUrlValue(rawValue)
+			const value = Array.isArray(rawValue)
 				? rawValue
-				: rawValue.replace(/[,.;:!?]+$/g, '');
+				: isUrlValue(rawValue)
+					? rawValue
+					: rawValue.replace(/[,.;:!?]+$/g, '');
 			if (value === '') {
 				index = nextIndex - 1;
 				continue;
 			}
 			candidates.push({
 				start: field.start,
-				end: valueEnd,
+				end: parsed.end,
 				type: 'field',
 				label: field.key,
 				value,
@@ -605,11 +592,14 @@ function extractMetadata(
 				} else if (repeatedFieldMode === 'first') {
 					// Keep the first value while still removing every occurrence below.
 				} else if (repeatedFieldMode === 'concatenate') {
-					fields[candidate.label] = `${fieldValueText(existing)}; ${candidate.value}`;
+					fields[candidate.label] = `${fieldValueText(existing)}; ${fieldValueText(candidate.value)}`;
 				} else {
-					fields[candidate.label] = Array.isArray(existing)
-						? [...existing, candidate.value]
-						: [existing, candidate.value];
+					fields[candidate.label] = [
+						...(Array.isArray(existing) ? existing : [existing]),
+						...(Array.isArray(candidate.value)
+							? candidate.value
+							: [candidate.value]),
+					];
 				}
 				removed.push({ start: candidate.start, end: candidate.end });
 			}
@@ -654,6 +644,75 @@ function closingQuote(text: string, start: number, quote: string): number {
 	return -1;
 }
 
+function parseDynamicValue(
+	text: string,
+	start: number,
+	plainEnd: number,
+): { value: string | string[]; end: number } {
+	const valueStart = skipWhitespace(text, start);
+	const first = text[valueStart];
+	const bracketList = first === '[' ? parseBracketList(text, valueStart) : null;
+	if (bracketList !== null) {
+		return { value: bracketList.values, end: bracketList.end };
+	}
+	if (first !== '"' && first !== "'") {
+		return { value: text.slice(start, plainEnd).trim(), end: plainEnd };
+	}
+	const quoteEnd = closingQuote(text, valueStart, first);
+	return quoteEnd === -1
+		? { value: text.slice(start, plainEnd).trim(), end: plainEnd }
+		: {
+				value: unescapeQuotedValue(text.slice(valueStart + 1, quoteEnd), first),
+				end: quoteEnd + 1,
+			};
+}
+
+function parseBracketList(
+	text: string,
+	start: number,
+): { values: string[]; end: number } | null {
+	const values: string[] = [];
+	let itemStart = start + 1;
+	let quote = '';
+
+	for (let index = itemStart; index < text.length; index++) {
+		const character = text[index] ?? '';
+		if (quote !== '') {
+			if (character === '\\') {
+				index++;
+			} else if (character === quote) {
+				quote = '';
+			}
+			continue;
+		}
+		if (character === '"' || character === "'") {
+			quote = character;
+			continue;
+		}
+		if (character !== ',' && character !== ']') {
+			continue;
+		}
+
+		const raw = text.slice(itemStart, index).trim();
+		if (raw === '') {
+			return character === ']' && values.length === 0
+				? { values, end: index + 1 }
+				: null;
+		}
+		const itemQuote = raw[0];
+		values.push(
+			(itemQuote === '"' || itemQuote === "'") && raw.at(-1) === itemQuote
+				? unescapeQuotedValue(raw.slice(1, -1), itemQuote)
+				: raw,
+		);
+		if (character === ']') {
+			return { values, end: index + 1 };
+		}
+		itemStart = index + 1;
+	}
+	return null;
+}
+
 function unescapeQuotedValue(value: string, quote: '"' | "'"): string {
 	return value.replace(new RegExp(`\\\\([\\\\${quote}])`, 'g'), '$1');
 }
@@ -667,7 +726,15 @@ function buildNoteContent(note: NoteSpec): string {
 	const lines = ['---'];
 	for (const key of keys) {
 		const value = note.properties[key]?.value ?? '';
-		lines.push(`${key}: ${yamlValue(value)}`);
+		if (Array.isArray(value)) {
+			lines.push(value.length === 0 ? `${key}: []` : `${key}:`);
+			for (const item of value) {
+				const serialized = key === 'tags' ? yamlText(item, true) : yamlValue(item);
+				lines.push(`  - ${serialized}`);
+			}
+		} else {
+			lines.push(`${key}: ${yamlValue(value)}`);
+		}
 	}
 	lines.push('---');
 	return lines.join('\n') + '\n';
@@ -748,15 +815,27 @@ function propertyKey(input: string, lowercase: boolean): string {
 	return lowercase ? key.toLowerCase() : key;
 }
 
-function yamlValue(value: string | string[]): string {
-	if (Array.isArray(value)) {
-		return `[${value.map((item) => `"${escapeQuotes(item)}"`).join(', ')}]`;
-	}
+function yamlValue(value: string): string {
 	const typed = typedValue(value);
 	if (typeof typed !== 'string') {
 		return String(typed);
 	}
-	return `"${escapeQuotes(typed)}"`;
+	return yamlText(typed);
+}
+
+function yamlText(value: string, preserveString = false): string {
+	const unsafe =
+		value === '' ||
+		(preserveString &&
+			/^(?:true|false|null|~|[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[-+]?\d+)?|\.nan|[-+]?\.inf)$/i.test(
+				value,
+			)) ||
+		/^[\s!&*{},#|>@`"'%?:-]/.test(value) ||
+		value.startsWith('[') ||
+		value.startsWith(']') ||
+		/(?:\s#|:\s|:$|[\r\n\t])/.test(value) ||
+		/^(?:null|~|\.nan|[-+]?\.inf)$/i.test(value);
+	return unsafe ? JSON.stringify(value) : value;
 }
 
 function typedValue(value: string | string[]): string | string[] | boolean | number {
