@@ -700,8 +700,9 @@ function parseBracketList(
 				: null;
 		}
 		const itemQuote = raw[0];
+		const lastCharacter = raw[raw.length - 1];
 		values.push(
-			(itemQuote === '"' || itemQuote === "'") && raw.at(-1) === itemQuote
+			(itemQuote === '"' || itemQuote === "'") && lastCharacter === itemQuote
 				? unescapeQuotedValue(raw.slice(1, -1), itemQuote)
 				: raw,
 		);
