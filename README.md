@@ -1,5 +1,7 @@
 # Basify
 
+[![Obsidian Downloads](https://img.shields.io/badge/dynamic/json?logo=obsidian&color=7C3AED&label=downloads&query=%24%5B%22basify%22%5D.downloads&url=https%3A%2F%2Fraw.githubusercontent.com%2Fobsidianmd%2Fobsidian-releases%2Fmaster%2Fcommunity-plugin-stats.json)](https://community.obsidian.md/plugins/basify)
+
 Convert a selected **list**, **task list**, or **table** into an [Obsidian base](https://obsidian.md/help/bases).
 
 Each list item, checkbox, or table row becomes its own note with frontmatter yaml. Basify can create a base that shows those notes as a table, or only create the base-ready notes.
