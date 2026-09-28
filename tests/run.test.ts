@@ -957,6 +957,47 @@ test('property keys are safe dot identifiers', () => {
 	if (!('Publication_Year' in props)) throw new Error('expected Publication_Year');
 });
 
+test('cjk property keys are preserved and stay distinct', () => {
+	const sel = parseSelection(
+		'| 书名 | 作者 | 年份 |\n| --- | --- | --- |\n| 呐喊 | 鲁迅 | 1923 |',
+	);
+	if (sel === null || sel.type !== 'table') throw new Error('no table');
+	const input = buildConvertInput(
+		sel,
+		opts({ nameColumn: 0, columns: ['书名', '作者', '年份'] }),
+	);
+	const props = input.notes[0]?.properties ?? {};
+	if (!('作者' in props) || !('年份' in props)) {
+		throw new Error('cjk keys lost: ' + JSON.stringify(Object.keys(props)));
+	}
+	if ('property' in props) throw new Error('cjk keys collided into the fallback');
+	if (props['作者']?.value !== '鲁迅') throw new Error('author value');
+	if (props['年份']?.value !== '1923') throw new Error('year value');
+	if (props['作者']?.displayName !== '作者') throw new Error('displayName');
+});
+
+test('cjk property keys survive note and base output', async () => {
+	const { app, vault } = makeApp();
+	const sel = parseSelection(
+		'| 书名 | 作者 |\n| --- | --- |\n| 呐喊 | 鲁迅 |',
+	);
+	if (sel === null || sel.type !== 'table') throw new Error('no table');
+	const input = buildConvertInput(
+		sel,
+		opts({ folder: 'Books', nameColumn: 0, columns: ['书名', '作者'] }),
+	);
+	await createNotes(app as never, input);
+	const content = vault.store.get('Books/呐喊.md') ?? '';
+	if (!content.includes('作者: 鲁迅')) throw new Error('frontmatter: ' + content);
+	const yaml = content.match(/^---\n([\s\S]*?)\n---/)?.[1];
+	if (yaml === undefined) throw new Error('missing frontmatter');
+	const properties = parseYaml(yaml) as Record<string, unknown>;
+	if (properties['作者'] !== '鲁迅') throw new Error('parsed author');
+	const base = buildBaseContent(input);
+	if (!base.includes('note.作者')) throw new Error('base order: ' + base);
+	if (!base.includes('  作者:')) throw new Error('base property: ' + base);
+});
+
 test('invalid filename characters are removed', () => {
 	const sel = parseSelection('- A/B: C?*"<>|#^[] note');
 	if (sel === null) throw new Error('no selection');
