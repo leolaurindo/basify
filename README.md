@@ -2,6 +2,8 @@
 
 [![Obsidian Downloads](https://img.shields.io/badge/dynamic/json?logo=obsidian&color=7C3AED&label=downloads&query=%24%5B%22basify%22%5D.downloads&url=https%3A%2F%2Fraw.githubusercontent.com%2Fobsidianmd%2Fobsidian-releases%2Fmaster%2Fcommunity-plugin-stats.json)](https://community.obsidian.md/plugins/basify)
 
+Read this in [中文](README.zh.md).
+
 Convert a selected **list**, **task list**, or **table** into an [Obsidian base](https://obsidian.md/help/bases).
 
 Each list item, checkbox, or table row becomes its own note with frontmatter yaml. Basify can create a base that shows those notes as a table, or only create the base-ready notes.
@@ -37,11 +39,11 @@ Becomes `Alan Turing.md` and `Grace Hopper.md`. The `.base` file is named after 
 Checkbox lists become notes with a boolean property for the checkbox state (`[x]` → `true`, `[ ]` → `false`).
 
 ```
-- [x] Buy milk type: groceries
+- [x] Buy eggs type: groceries
 - [ ] Pay bills due:2026-08-04
 ```
 
-Becomes `Buy milk.md` (with `status: true` and `type: groceries`) and `Pay bills.md` (with `status: false` and `due: 2026-08-04`), and the base shows a checkable **status** column.
+Becomes `Buy eggs.md` (with `status: true` and `type: groceries`) and `Pay bills.md` (with `status: false` and `due: 2026-08-04`), and the base shows a checkable **status** column.
 
 The metadata extract is removed from the note filename.
 
