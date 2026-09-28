@@ -805,7 +805,7 @@ function formatName(
 
 function sanitizeProperty(input: string): string {
 	const name = input
-		.replace(/[^a-zA-Z0-9 _-]+/g, ' ')
+		.replace(/[^\p{L}\p{N} _-]+/gu, ' ')
 		.replace(/[\s-]+/g, '_')
 		.replace(/^_+|_+$/g, '');
 	return name === '' ? 'property' : name;
