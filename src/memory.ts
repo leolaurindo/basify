@@ -1,3 +1,4 @@
+import type { ExistingBodyMode } from './body';
 import type {
 	ConflictModeValue,
 	LongFilenameMode,
@@ -30,6 +31,9 @@ export interface BasifyMemory {
 	lastLongFilenameMode: LongFilenameMode;
 	lastMaxFilenameLength: number;
 	lastAdvancedOptions: boolean;
+	lastBodyColumns: number[];
+	lastIncludeNestedContent: boolean;
+	lastExistingBodyMode: ExistingBodyMode;
 }
 
 export type BasifyFileMemories = Record<string, BasifyMemory>;
@@ -58,6 +62,9 @@ export const DEFAULT_MEMORY: BasifyMemory = {
 	lastLongFilenameMode: 'shorten',
 	lastMaxFilenameLength: 120,
 	lastAdvancedOptions: false,
+	lastBodyColumns: [],
+	lastIncludeNestedContent: true,
+	lastExistingBodyMode: 'append',
 };
 
 export function loadFileMemories(value: unknown): BasifyFileMemories {

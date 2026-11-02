@@ -32,6 +32,7 @@ import {
 	saveFileMemory,
 } from '../src/memory';
 import { parse as parseYaml } from 'yaml';
+import { renderBodyLayout, updateExistingBody } from '../src/body';
 
 class FakeVault extends Vault {
 	store = new Map<string, string>();
@@ -50,6 +51,12 @@ class FakeVault extends Vault {
 			}
 		}
 		return null;
+	}
+
+	async process(file: TFile, callback: (content: string) => string): Promise<string> {
+		const content = callback(this.store.get(file.path) ?? '');
+		this.store.set(file.path, content);
+		return content;
 	}
 
 	async createFolder(path: string): Promise<TFolder> {
@@ -142,6 +149,12 @@ function opts(over: Partial<BasifyOptions> = {}): BasifyOptions {
 		conflictSuffix: 'copy',
 		...over,
 	};
+}
+
+function equal(actual: unknown, expected: unknown): void {
+	if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+		throw new Error(`Expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
+	}
 }
 
 const tests: Array<() => Promise<void>> = [];
@@ -1351,6 +1364,7 @@ test('getSelectionBlock expands around the cursor', () => {
 test('getSelectionBlock expands a partial selection to complete lines', () => {
 	const lines = ['before', '- lista', '- listas', '- lista', 'after'];
 	const fakeEditor = {
+		lineCount: () => lines.length,
 		getSelection: () => 'lista\n- listas\n- list',
 		getCursor: (which: string) =>
 			which === 'from' ? { line: 1, ch: 2 } : { line: 3, ch: 6 },
@@ -1377,6 +1391,7 @@ test('getSelectionBlock expands a partial selection to complete lines', () => {
 test('getSelectionBlock excludes a following line selected only at column zero', () => {
 	const lines = ['- A', '- B', 'not selected'];
 	const fakeEditor = {
+		lineCount: () => lines.length,
 		getSelection: () => '- A\n- B\n',
 		getCursor: (which: string) =>
 			which === 'from' ? { line: 0, ch: 0 } : { line: 2, ch: 0 },
@@ -1387,6 +1402,194 @@ test('getSelectionBlock excludes a following line selected only at column zero',
 	const block = getSelectionBlock(fakeEditor as never);
 	if (block.text !== '- A\n- B') throw new Error('text: ' + block.text);
 	if (block.to.line !== 1) throw new Error('included following line');
+});
+
+test('nested content is preserved by default and can be opted out', async () => {
+	const selection = parseSelection('- Parent #topic\n  A **paragraph** with [[Link]].\n\n  - Child #child due:2026-01-01\n    - Grandchild\n- Next')!;
+	const input = buildConvertInput(selection, opts());
+	equal(input.notes.length, 2);
+	equal(input.notes[0]?.body, 'A **paragraph** with [[Link]].\n\n- Child #child due:2026-01-01\n  - Grandchild');
+	equal(Object.keys(input.notes[0]?.properties ?? {}), ['tags']);
+	const { app, vault } = makeApp();
+	await createNotes(app as never, input);
+	const content = vault.store.get('Books/Parent.md') ?? '';
+	if (!content.includes('[[Link]]') || !content.includes('- Grandchild')) throw new Error('body missing');
+	equal(buildConvertInput(selection, opts({ includeNestedContent: false })).notes[0]?.body, '');
+});
+
+test('cursor detection includes continuation paragraphs and blank lines without consuming following text', () => {
+	const lines = ['before', '- Parent', '  Paragraph', '', '  - Child', '', '- Next', 'after'];
+	const editor = {
+		getSelection: () => '', getCursor: () => ({ line: 2, ch: 3 }),
+		lineCount: () => lines.length, getLine: (n: number) => lines[n] ?? '',
+		getRange: (from: { line: number }, to: { line: number }) => lines.slice(from.line, to.line + 1).join('\n'),
+	};
+	equal(getSelectionBlock(editor as never).text, lines.slice(1, 7).join('\n'));
+});
+
+test('table body columns stay out of properties and bases and keep source order', async () => {
+	const selection = parseSelection('| Name | Year | Summary | Questions |\n| --- | --- | --- | --- |\n| Book | 2024 | **Summary** | [[Question]] |')!;
+	const input = buildConvertInput(selection, opts({ bodyColumns: [3, 2] }));
+	equal(input.notes[0]?.body, '## Summary\n\n**Summary**\n\n## Questions\n\n[[Question]]');
+	equal(Object.keys(input.notes[0]?.properties ?? {}), ['Year']);
+	const base = buildBaseContent(input);
+	if (base.includes('note.Summary') || base.includes('note.Questions')) throw new Error('body fields in base');
+	const { app, vault } = makeApp();
+	await createNotes(app as never, input);
+	if (!vault.store.get('Books/Book.md')?.includes('## Summary')) throw new Error('body not serialized');
+	equal(buildConvertInput(selection, opts({ bodyColumns: [2] })).notes[0]?.body, '**Summary**');
+});
+
+test('body layout substitutes literally and keeps readable title independent of filename', async () => {
+	equal(renderBodyLayout('{{title}}\n{{body}}\n{{source}}\n{{unknown}}', 'A', '$& **body**', '[[Source]]'), 'A\n$& **body**\n[[Source]]\n{{unknown}}');
+	const input = buildConvertInput(parseSelection('- My Title #tag\n  Details')!, opts({
+		lowercaseNames: true, nameSeparator: 'dash',
+		bodyLayout: '# {{title}}\n\n{{body}}\n\nSource: {{source}}', sourceLink: '[[Inbox]]',
+	}));
+	const { app, vault } = makeApp();
+	await createNotes(app as never, input);
+	if (!vault.store.get('Books/my-title.md')?.includes('# My Title\n\nDetails\n\nSource: [[Inbox]]')) throw new Error('layout');
+});
+
+test('existing-body updates preserve frontmatter and empty incoming text is non-destructive', () => {
+	const frontmatter = '---\r\nkey: value\r\n---\r\n';
+	equal(updateExistingBody(frontmatter + 'Old\n', 'New', 'replace'), frontmatter + 'New\n');
+	equal(updateExistingBody('Old', 'New', 'append'), 'Old\n\nNew\n');
+	equal(updateExistingBody('Old', 'New', 'keep'), 'Old');
+	equal(updateExistingBody('---\n---\nOld', 'New', 'replace'), '---\n---\nNew\n');
+	equal(updateExistingBody('Old', '  ', 'replace'), 'Old');
+	equal(updateExistingBody('---\nkey: value\n---', 'New', 'replace'), '---\nkey: value\n---\nNew\n');
+});
+
+for (const conflictMode of ['merge-new', 'merge-old', 'merge-combine'] as const) {
+	for (const mode of ['append', 'replace', 'keep'] as const) {
+		test(`${conflictMode} with body ${mode} applies independently and does not repeat layout`, async () => {
+			const { app, vault } = makeApp();
+			vault.store.set('Books/Book.md', '---\nkey: old\n---\nOriginal\n');
+			const input = buildConvertInput(parseSelection('- Book key:new\n  Incoming')!, opts({ extractDynamic: true, bodyLayout: '# {{title}}\n{{body}}' }));
+			await createNotes(app as never, input, conflictMode, '', 'shorten', undefined, mode);
+			const content = vault.store.get('Books/Book.md') ?? '';
+			const body = content.slice(content.indexOf('\n---\n') + 5);
+			equal(body, mode === 'append' ? 'Original\n\nIncoming\n' : mode === 'replace' ? 'Incoming\n' : 'Original\n');
+			const yaml = parseYaml(content.split('---')[1] ?? '') as Record<string, unknown>;
+			equal(yaml.key, conflictMode === 'merge-new' ? 'new' : conflictMode === 'merge-old' ? 'old' : ['old', 'new']);
+		});
+	}
+}
+
+test('skip and suffix do not apply replace to existing bodies', async () => {
+	for (const mode of ['skip', 'suffix'] as const) {
+		const { app, vault } = makeApp();
+		vault.store.set('Books/Book.md', 'Original');
+		const input = buildConvertInput(parseSelection('- Book\n  Incoming')!, opts());
+		await createNotes(app as never, input, mode, 'copy', 'shorten', undefined, 'replace');
+		equal(vault.store.get('Books/Book.md'), 'Original');
+		if (mode === 'suffix') equal(vault.store.get('Books/Book copy.md'), 'Incoming\n');
+	}
+});
+
+test('headerless table body sections use configured names and omit empty cells', () => {
+	const selection = parseSelection('| First | Body | |')!;
+	const input = buildConvertInput(selection, opts({ columns: ['Title', 'Details', 'Questions'], bodyColumns: [0, 1, 2] }));
+	equal(input.notes[0]?.name, 'First');
+	equal(input.notes[0]?.body, '## Details\n\nBody');
+	equal(input.notes[0]?.properties, {});
+});
+
+test('cursor block detection does not consume unrelated indented text before a list', () => {
+	const lines = ['    unrelated code', '', '- Parent', '  Content', 'after'];
+	const editor = {
+		getSelection: () => '', getCursor: () => ({ line: 2, ch: 0 }),
+		lineCount: () => lines.length, getLine: (n: number) => lines[n] ?? '',
+		getRange: (from: { line: number }, to: { line: number }) => lines.slice(from.line, to.line + 1).join('\n'),
+	};
+	equal(getSelectionBlock(editor as never).text, '- Parent\n  Content');
+});
+
+test('indented code retains Markdown indentation in new and merged bodies', async () => {
+	const input = buildConvertInput(parseSelection('- Code\n      const answer = 42;')!, opts());
+	equal(input.notes[0]?.body, '    const answer = 42;');
+	const { app, vault } = makeApp();
+	await createNotes(app as never, input);
+	equal(vault.store.get('Books/Code.md'), '    const answer = 42;\n');
+	equal(updateExistingBody('Old', input.notes[0]?.body ?? '', 'append'), 'Old\n\n    const answer = 42;\n');
+});
+
+test('selected nested list level still converts independently', () => {
+	const selection = parseSelection('  - Child\n    Details\n    - Grandchild\n  - Sibling')!;
+	const input = buildConvertInput(selection, opts());
+	equal(input.notes.map((note) => note.name), ['Child', 'Sibling']);
+	equal(input.notes[0]?.body, 'Details\n- Grandchild');
+});
+
+for (const indent of ['  ', '    ', '\t']) {
+	test(`child lists are promoted one level with ${JSON.stringify(indent)} indentation`, () => {
+		const selection = parseSelection(`- Parent\n${indent}- Child\n${indent}${indent}- Grandchild\n${indent}- Sibling`)!;
+		const body = buildConvertInput(selection, opts()).notes[0]?.body ?? '';
+		const deeperIndent = indent;
+		equal(body, `- Child\n${deeperIndent}- Grandchild\n- Sibling`);
+	});
+}
+
+test('paragraphs and four-space child lists are both promoted without flattening grandchildren', () => {
+	const selection = parseSelection('- Parent\n  Paragraph\n    - Child\n        - Grandchild\n  Another paragraph')!;
+	equal(buildConvertInput(selection, opts()).notes[0]?.body, 'Paragraph\n- Child\n    - Grandchild\nAnother paragraph');
+});
+
+test('four-space continuation paragraphs become unindented prose', () => {
+	const selection = parseSelection('- Parent\n    A paragraph\n\n    Another paragraph')!;
+	equal(buildConvertInput(selection, opts()).notes[0]?.body, 'A paragraph\n\nAnother paragraph');
+});
+
+function listEditor(lines: string[], fromLine: number, toLine = fromLine, toColumn?: number) {
+	return {
+		getSelection: () => toColumn === undefined ? '' : 'selected text',
+		getCursor: (which?: string) => which === 'to'
+			? { line: toLine, ch: toColumn ?? 0 }
+			: { line: fromLine, ch: 0 },
+		lineCount: () => lines.length,
+		getLine: (n: number) => lines[n] ?? '',
+		getRange: (from: { line: number }, to: { line: number }) => lines.slice(from.line, to.line + 1).join('\n'),
+	};
+}
+
+test('selecting only a parent includes its complete subtree but not the next sibling', () => {
+	const lines = ['before', '- Parent', '', '    Paragraph', '    - Child', '        - Grandchild', '', '- Next', '    - Other', 'after'];
+	for (const [end, column] of [[1, 8], [2, 0], [4, 11]]) {
+		const editor = listEditor(lines, 1, end, column);
+		const block = getSelectionBlock(editor as never);
+		equal(block.text, lines.slice(1, 6).join('\n'));
+		equal(block.to.line, 5);
+		const input = buildConvertInput(parseSelection(block.text)!, opts());
+		equal(input.notes.map((note) => note.name), ['Parent']);
+		equal(input.notes[0]?.body, 'Paragraph\n- Child\n    - Grandchild');
+	}
+});
+
+test('cursor on parent includes nested content across blank lines', () => {
+	const lines = ['before', '- Parent', '', '    - Child', '        - Grandchild', '- Next', 'after'];
+	const block = getSelectionBlock(listEditor(lines, 1) as never);
+	equal(block.text, lines.slice(1, 6).join('\n'));
+	equal(buildConvertInput(parseSelection(block.text)!, opts()).notes[0]?.body, '- Child\n    - Grandchild');
+});
+
+test('selecting a nested parent includes only its deeper descendants', () => {
+	const lines = ['- Parent', '    - Child', '        - Grandchild', '            - Great-grandchild', '    - Sibling'];
+	const block = getSelectionBlock(listEditor(lines, 1, 1, 11) as never);
+	equal(block.text, lines.slice(1, 4).join('\n'));
+	equal(buildConvertInput(parseSelection(block.text)!, opts()).notes[0]?.body, '- Grandchild\n    - Great-grandchild');
+});
+
+test('selected parent expansion stops before unrelated prose even across blanks', () => {
+	const lines = ['- Parent', '    - Child', '', 'Unrelated prose', '    unrelated indented text'];
+	equal(getSelectionBlock(listEditor(lines, 0, 0, 8) as never).text, '- Parent\n    - Child');
+});
+
+test('old memories inherit preservation and append defaults', () => {
+	const memory = loadFileMemories({ 'Source.md': { lastFolder: 'Notes' } })['Source.md'];
+	equal(memory?.lastIncludeNestedContent, true);
+	equal(memory?.lastExistingBodyMode, 'append');
+	equal(memory?.lastBodyColumns, []);
 });
 
 void run();

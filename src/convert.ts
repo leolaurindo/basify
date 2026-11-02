@@ -1,5 +1,6 @@
 import { App, TFolder, TFile, Vault } from 'obsidian';
 import { isTaskList, Selection } from './selection';
+import { DEFAULT_BODY_LAYOUT, ExistingBodyMode, renderBodyLayout, updateExistingBody } from './body';
 
 export interface BasifyOptions {
 	folder: string;
@@ -25,6 +26,11 @@ export interface BasifyOptions {
 	longFilenameMode?: LongFilenameMode;
 	maxFilenameLength?: number;
 	advancedOptions?: boolean;
+	bodyColumns?: number[];
+	includeNestedContent?: boolean;
+	existingBodyMode?: ExistingBodyMode;
+	bodyLayout?: string;
+	sourceLink?: string;
 }
 
 export interface PropertySpec {
@@ -34,6 +40,8 @@ export interface PropertySpec {
 
 export interface NoteSpec {
 	name: string;
+	body?: string;
+	initialBody?: string;
 	properties: Record<string, PropertySpec>;
 	sourceLine: number;
 }
@@ -147,7 +155,10 @@ export function buildConvertInput(
 				};
 			}
 
+			const body = options.includeNestedContent !== false ? item.body ?? '' : '';
 			notes.push({
+				body,
+				initialBody: renderBodyLayout(options.bodyLayout ?? DEFAULT_BODY_LAYOUT, extracted.name, body, options.sourceLink ?? ''),
 				name: formatName(baseName, separator, options.lowercaseNames),
 				properties,
 				sourceLine: item.line,
@@ -162,10 +173,17 @@ export function buildConvertInput(
 	for (const [rowIndex, row] of selection.rows.entries()) {
 		const properties: Record<string, PropertySpec> = {};
 		let name = '';
+		const bodyParts: string[] = [];
+		const bodyColumns = (options.bodyColumns ?? []).filter((index) => index !== nameColumn);
 		selection.columns.forEach((column, index) => {
 			const value = row[column] ?? '';
 			if (index === nameColumn) {
 				name = value;
+			} else if (bodyColumns.includes(index)) {
+				if (value.trim() !== '') {
+					const heading = (options.columns[index] ?? column).trim() || `Column ${index + 1}`;
+					bodyParts.push(bodyColumns.length > 1 ? `## ${heading}\n\n${value}` : value);
+				}
 			} else if (value.trim() !== '') {
 				const field =
 					(options.columns[index] ?? column).trim() ||
@@ -190,7 +208,10 @@ export function buildConvertInput(
 				),
 			};
 		}
+		const body = bodyParts.join('\n\n');
 		notes.push({
+			body,
+			initialBody: renderBodyLayout(options.bodyLayout ?? DEFAULT_BODY_LAYOUT, name, body, options.sourceLink ?? ''),
 			name: formatName(baseName, separator, options.lowercaseNames),
 			properties,
 			sourceLine: selection.rowLines[rowIndex] ?? rowIndex,
@@ -207,6 +228,7 @@ export async function createNotes(
 	conflictSuffix = '',
 	longFilenameMode: LongFilenameMode = 'shorten',
 	maxFilenameLength?: number,
+	existingBodyMode: ExistingBodyMode = 'append',
 ): Promise<NoteResult[]> {
 	const filenameLength = normalizeFilenameLength(maxFilenameLength);
 	const longNotes = input.notes.filter(
@@ -316,6 +338,9 @@ export async function createNotes(
 					}
 				}
 			});
+			if (existingBodyMode !== 'keep' && note.body?.trim()) {
+				await app.vault.process(existing, (content) => updateExistingBody(content, note.body ?? '', existingBodyMode));
+			}
 			logDebug('note-merged', {
 				sourceLine: note.sourceLine,
 				mode: conflictMode,
@@ -720,8 +745,9 @@ function unescapeQuotedValue(value: string, quote: '"' | "'"): string {
 
 function buildNoteContent(note: NoteSpec): string {
 	const keys = Object.keys(note.properties);
+	const body = note.initialBody ?? note.body ?? '';
 	if (keys.length === 0) {
-		return '';
+		return body === '' ? '' : `${body}\n`;
 	}
 
 	const lines = ['---'];
@@ -738,7 +764,7 @@ function buildNoteContent(note: NoteSpec): string {
 		}
 	}
 	lines.push('---');
-	return lines.join('\n') + '\n';
+	return lines.join('\n') + '\n' + (body === '' ? '' : `\n${body}\n`);
 }
 
 function buildBaseFile(folder: string, notes: NoteSpec[]): string {

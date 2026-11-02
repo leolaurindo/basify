@@ -1,4 +1,5 @@
 import { App, PluginSettingTab, SettingDefinitionItem } from 'obsidian';
+import { DEFAULT_BODY_LAYOUT } from './body';
 import type BasifyPlugin from './main';
 
 export type FolderMode = 'folder' | 'last' | 'fixed';
@@ -8,6 +9,8 @@ export interface BasifySettings {
 	fixedOutputFolder: string;
 	baseFolderMode: FolderMode;
 	fixedBaseFolder: string;
+	bodyLayout: string;
+	noteBodyAnnouncementSeen: boolean;
 }
 
 export const DEFAULT_SETTINGS: BasifySettings = {
@@ -15,6 +18,8 @@ export const DEFAULT_SETTINGS: BasifySettings = {
 	fixedOutputFolder: '',
 	baseFolderMode: 'folder',
 	fixedBaseFolder: '',
+	bodyLayout: DEFAULT_BODY_LAYOUT,
+	noteBodyAnnouncementSeen: false,
 };
 
 export { DEFAULT_MEMORY } from './memory';
@@ -36,6 +41,11 @@ export class BasifySettingTab extends PluginSettingTab {
 
 	getSettingDefinitions(): SettingDefinitionItem[] {
 		return [
+			{
+				name: 'Note body layout',
+				desc: 'Markdown for new notes. Use {{title}} for the readable title, {{body}} for incoming content, and {{source}} for a source-note link. Merges use incoming content only, without the layout. Include {{body}} when copying content.',
+				control: { type: 'textarea', key: 'bodyLayout', rows: 8, defaultValue: DEFAULT_BODY_LAYOUT },
+			},
 			{
 				name: 'Default output folder',
 				desc: 'Folder prefilled in the dialog for the notes.',

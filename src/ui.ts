@@ -1,4 +1,4 @@
-import { App, DropdownComponent, Modal, Setting, TextComponent } from 'obsidian';
+import { App, DropdownComponent, Modal, Notice, Setting, TextComponent } from 'obsidian';
 import {
 	BasifyOptions,
 	ConflictModeValue,
@@ -19,7 +19,7 @@ export interface BasifyPrompt {
 }
 
 type ModalOptions = Required<
-	Omit<BasifyOptions, 'folder' | 'columns' | 'nameColumn'>
+	Omit<BasifyOptions, 'folder' | 'columns' | 'nameColumn' | 'bodyLayout' | 'sourceLink'>
 > & { nameColumn: number };
 
 export function promptBasify(
@@ -48,6 +48,7 @@ class BasifyModal extends Modal {
 	private conflictOptionsContainer: HTMLElement | null = null;
 	private advancedOptionsContainer: HTMLElement | null = null;
 	private settled = false;
+	private columnDestinations: HTMLElement | null = null;
 
 	constructor(
 		app: App,
@@ -86,6 +87,9 @@ class BasifyModal extends Modal {
 				prompt.initial?.maxFilenameLength ?? DEFAULT_MAX_FILENAME_LENGTH,
 			advancedOptions: prompt.initial?.advancedOptions ?? false,
 			nameColumn: 0,
+			bodyColumns: [...(prompt.initial?.bodyColumns ?? [])].filter((index) => index >= 0 && index < this.columns.length),
+			includeNestedContent: prompt.initial?.includeNestedContent ?? true,
+			existingBodyMode: prompt.initial?.existingBodyMode ?? 'append',
 		};
 		if (this.columns.length > 0) {
 			const lastColumn = this.columns.length - 1;
@@ -160,6 +164,7 @@ class BasifyModal extends Modal {
 				dropdown.onChange((value: string) => {
 					this.options.sourceMode =
 						value === 'keep' || value === 'all' ? value : 'converted';
+					this.renderConflictOptions();
 				});
 			});
 
@@ -179,6 +184,19 @@ class BasifyModal extends Modal {
 					this.renderConflictOptions();
 				});
 			});
+
+		if (this.columns.length > 0) {
+			new Setting(this.contentEl).setName('Column destinations').setHeading();
+			this.columnDestinations = this.contentEl.createDiv();
+			this.renderColumnDestinations();
+		} else {
+			new Setting(this.contentEl)
+				.setName('Include nested content')
+				.setDesc('Copy nested lists and continuation text into each note body. Turning this off can discard that content when source entries are removed.')
+				.addToggle((toggle) => toggle.setValue(this.options.includeNestedContent).onChange((value) => {
+					this.options.includeNestedContent = value;
+				}));
+		}
 
 		this.conflictOptionsContainer = this.contentEl.createDiv({
 			cls: 'basify-conflict-options',
@@ -322,24 +340,6 @@ class BasifyModal extends Modal {
 				});
 		}
 
-		if (this.columns.length > 0) {
-			new Setting(container)
-				.setName('Filename column')
-				.setDesc('Column used for the note file names.')
-				.addDropdown((dropdown: DropdownComponent) => {
-					this.columns.forEach((column, index) => {
-						dropdown.addOption(String(index), column);
-					});
-					dropdown.setValue(String(this.options.nameColumn));
-					dropdown.onChange((value: string) => {
-						this.options.nameColumn = parseInt(value, 10);
-						if (!this.hasHeader) {
-							this.renderFields();
-						}
-					});
-				});
-		}
-
 		if (!this.hasHeader && this.columns.length > 1) {
 			new Setting(container).setName('Field names').setHeading();
 			this.fieldsContainer = container.createDiv({ cls: 'basify-fields' });
@@ -457,6 +457,26 @@ class BasifyModal extends Modal {
 			return;
 		}
 		container.empty();
+		if (this.options.conflictMode.startsWith('merge-')) {
+			new Setting(container)
+				.setName('Existing note body')
+				.setDesc('Applies only to notes being merged. Append and replace use incoming content without the new-note layout. Empty incoming content leaves the body unchanged.')
+				.addDropdown((dropdown) => {
+					dropdown.addOption('append', 'Append at bottom (recommended)')
+						.addOption('replace', 'Replace existing body')
+						.addOption('keep', 'Leave existing body unchanged')
+						.setValue(this.options.existingBodyMode)
+						.onChange((value) => {
+							this.options.existingBodyMode = value === 'replace' || value === 'keep' ? value : 'append';
+							this.renderConflictOptions();
+						});
+				});
+			if (this.options.existingBodyMode === 'replace') {
+				container.createDiv({ cls: 'basify-warning', text: 'This will overwrite the body of existing notes being merged. Their current body content will be lost.' });
+			} else if (this.options.existingBodyMode === 'keep') {
+				container.createDiv({ cls: 'basify-warning', text: 'Incoming body content will not be copied.' + (this.options.sourceMode !== 'keep' ? ' Removing those source entries will discard their incoming body content.' : '') });
+			}
+		}
 		if (this.options.conflictMode !== 'suffix') {
 			return;
 		}
@@ -469,6 +489,29 @@ class BasifyModal extends Modal {
 					this.options.conflictSuffix = value.trim();
 				});
 			});
+	}
+
+	private renderColumnDestinations(): void {
+		const container = this.columnDestinations;
+		if (!container) return;
+		container.empty();
+		this.columns.forEach((column, index) => {
+			new Setting(container).setName(column).addDropdown((dropdown) => {
+				dropdown.addOption('filename', 'Filename').addOption('property', 'Property').addOption('body', 'Note body');
+				dropdown.setValue(index === this.options.nameColumn ? 'filename' : this.options.bodyColumns.includes(index) ? 'body' : 'property');
+				dropdown.onChange((value) => {
+					if (value !== 'filename' && index === this.options.nameColumn) {
+						new Notice('Choose another filename column first.');
+					} else {
+						this.options.bodyColumns = this.options.bodyColumns.filter((columnIndex) => columnIndex !== index);
+						if (value === 'filename') this.options.nameColumn = index;
+						if (value === 'body') this.options.bodyColumns.push(index);
+					}
+					this.renderColumnDestinations();
+					this.renderFields();
+				});
+			});
+		});
 	}
 
 	private renderFields(): void {

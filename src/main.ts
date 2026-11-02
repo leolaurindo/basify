@@ -27,15 +27,28 @@ import {
 	saveFileMemory,
 } from './memory';
 import { promptBasify } from './ui';
+import { NoteBodyAnnouncement } from './whats-new';
 
 export default class BasifyPlugin extends Plugin {
 	settings!: BasifySettings;
 	memory!: BasifyMemory;
 	fileMemories!: BasifyFileMemories;
+	private announcement: NoteBodyAnnouncement | null = null;
+	private unloaded = false;
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
 		this.addSettingTab(new BasifySettingTab(this.app, this));
+		if (!this.settings.noteBodyAnnouncementSeen) {
+			this.app.workspace.onLayoutReady(() => {
+				if (this.unloaded) return;
+				this.announcement = new NoteBodyAnnouncement(this.app, () => {
+					this.settings.noteBodyAnnouncementSeen = true;
+					void this.saveSettings();
+				});
+				this.announcement.open();
+			});
+		}
 		this.registerEvent(
 			this.app.vault.on('rename', (file, oldPath) => {
 				if (!(file instanceof TFile)) {
@@ -74,6 +87,11 @@ export default class BasifyPlugin extends Plugin {
 		});
 	}
 
+	onunload(): void {
+		this.unloaded = true;
+		this.announcement?.close();
+	}
+
 	async loadSettings(): Promise<void> {
 		const data = (await this.loadData()) as
 			| {
@@ -83,6 +101,11 @@ export default class BasifyPlugin extends Plugin {
 			  }
 			| null;
 		this.settings = { ...DEFAULT_SETTINGS, ...data?.settings };
+		// Fresh installs do not need an update announcement.
+		if (data === null) {
+			this.settings.noteBodyAnnouncementSeen = true;
+			await this.saveData({ settings: this.settings });
+		}
 		this.memory = { ...DEFAULT_MEMORY, ...data?.memory };
 		this.fileMemories = loadFileMemories(data?.fileMemories);
 	}
@@ -136,6 +159,9 @@ export default class BasifyPlugin extends Plugin {
 				longFilenameMode: memory.lastLongFilenameMode,
 				maxFilenameLength: memory.lastMaxFilenameLength,
 				advancedOptions: memory.lastAdvancedOptions,
+				bodyColumns: memory.lastBodyColumns,
+				includeNestedContent: memory.lastIncludeNestedContent,
+				existingBodyMode: memory.lastExistingBodyMode,
 			},
 		});
 		if (options === null) {
@@ -166,6 +192,9 @@ export default class BasifyPlugin extends Plugin {
 			lastLongFilenameMode: options.longFilenameMode ?? 'shorten',
 			lastMaxFilenameLength: options.maxFilenameLength ?? 120,
 			lastAdvancedOptions: options.advancedOptions ?? false,
+			lastBodyColumns: options.bodyColumns ?? [],
+			lastIncludeNestedContent: options.includeNestedContent ?? true,
+			lastExistingBodyMode: options.existingBodyMode ?? 'append',
 		};
 		if (sourceFile !== null) {
 			this.fileMemories = saveFileMemory(
@@ -177,7 +206,15 @@ export default class BasifyPlugin extends Plugin {
 		await this.saveSettings();
 
 		try {
-			const input = buildConvertInput(selection, options);
+			const input = buildConvertInput(selection, {
+				...options,
+				bodyLayout: this.settings.bodyLayout,
+				sourceLink: sourceFile === null ? '' : this.app.fileManager.generateMarkdownLink(sourceFile, options.folder ? `${options.folder}/Untitled.md` : 'Untitled.md'),
+			});
+			if (!this.settings.bodyLayout.includes('{{body}}') && input.notes.some((note) => note.body?.trim())) {
+				new Notice('Include {{body}} in the note body layout in Basify settings before copying body content.');
+				return;
+			}
 			const results = await createNotes(
 				this.app,
 				input,
@@ -185,6 +222,7 @@ export default class BasifyPlugin extends Plugin {
 				options.conflictSuffix,
 				options.longFilenameMode,
 				options.maxFilenameLength,
+				options.existingBodyMode,
 			);
 			let generated = '';
 			let baseFile: TFile | null = null;

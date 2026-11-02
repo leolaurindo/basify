@@ -1,4 +1,5 @@
 import { Editor, EditorPosition } from 'obsidian';
+import { extractListBody, indentationWidth } from './list-content';
 
 export type Selection = TableSelection | ListSelection;
 
@@ -14,6 +15,7 @@ export interface ListItem {
 	text: string;
 	done: boolean | null;
 	line: number;
+	body?: string;
 }
 
 export interface ListSelection {
@@ -37,7 +39,23 @@ export function getSelectionBlock(editor: Editor): SelectionBlock {
 	const from = editor.getCursor('from');
 	const to = editor.getCursor('to');
 	if (selection.trim() !== '') {
-		const endLine = to.ch === 0 && to.line > from.line ? to.line - 1 : to.line;
+		let endLine = to.ch === 0 && to.line > from.line ? to.line - 1 : to.line;
+		// Selecting a parent means selecting the complete entry, not just its
+		// title line. Do not pull in the next sibling or unrelated prose.
+		const first = editor.getLine(from.line);
+		if (LIST_MARKER.test(first)) {
+			const parentIndent = indentationWidth(first);
+			let next = endLine + 1;
+			while (next < editor.lineCount()) {
+				const line = editor.getLine(next);
+				if (line.trim() === '') {
+					next++;
+					continue;
+				}
+				if (indentationWidth(line) <= parentIndent) break;
+				endLine = next++;
+			}
+		}
 		const blockFrom = { line: from.line, ch: 0 };
 		const blockTo = { line: endLine, ch: editor.getLine(endLine).length };
 		return {
@@ -52,11 +70,24 @@ export function getSelectionBlock(editor: Editor): SelectionBlock {
 	let start = cursor.line;
 	let end = cursor.line;
 
-	while (start > 0 && isBlockLine(editor.getLine(start - 1))) {
-		start--;
-	}
-	while (end < lastLine && isBlockLine(editor.getLine(end + 1))) {
-		end++;
+	const belongsToBlock = (index: number): boolean => {
+		const line = editor.getLine(index);
+		if (isBlockLine(line) || /^\s+\S/.test(line)) return true;
+		if (line.trim() !== '') return false;
+		let next = index + 1;
+		while (next <= lastLine && editor.getLine(next).trim() === '') next++;
+		return next <= lastLine && (isBlockLine(editor.getLine(next)) || /^\s+\S/.test(editor.getLine(next)));
+	};
+	if (editor.getLine(cursor.line).trim().startsWith('|')) {
+		while (start > 0 && isBlockLine(editor.getLine(start - 1))) start--;
+		while (end < lastLine && isBlockLine(editor.getLine(end + 1))) end++;
+	} else {
+		while (start > 0 && belongsToBlock(start - 1)) start--;
+		while (end < lastLine && belongsToBlock(end + 1)) end++;
+		// Continuations need a preceding list anchor; never consume unrelated
+		// indented text before a list just because it is adjacent to the block.
+		while (start <= cursor.line && !LIST_MARKER.test(editor.getLine(start))) start++;
+		if (start > cursor.line) start = end = cursor.line;
 	}
 
 	return {
@@ -173,6 +204,11 @@ function parseList(lines: string[]): ListSelection | null {
 		}
 	}
 
+	for (const [index, item] of items.entries()) {
+		const end = items[index + 1]?.line ?? lines.length;
+		const body = extractListBody(lines, item.line, end);
+		if (body !== '') item.body = body;
+	}
 	return items.length > 0 ? { type: 'list', items } : null;
 }
 
