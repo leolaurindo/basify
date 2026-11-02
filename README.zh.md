@@ -14,7 +14,11 @@
 
 每个列表项、复选框或表格行都会成为一篇带有 frontmatter yaml 的独立笔记。Basify 可以创建把这些笔记以表格形式展示的 base，也可以只创建可用于 base 的笔记。
 
-如果你觉得 Basify 有用，欢迎在 [github](https://github.com/leolaurindo/basify) 上点个 ⭐。
+喜欢 Basify？欢迎在 [GitHub](https://github.com/leolaurindo/basify) 上点个 ⭐，也欢迎支持我学习普通话！
+
+<a href="https://afdian.com/a/leolaurindo"><img src="assets/afdian-support.jpg" alt="Support me on Afdian / 在爱发电支持我" width="250"></a>
+
+<a href="https://ko-fi.com/leolaurindo"><img src="assets/kofi-support.png" alt="Support me on Ko-fi / 在 Ko-fi 支持我" width="200"></a>
 
 ## 使用方法
 
@@ -55,7 +59,7 @@
 
 ### 表格
 
-其中一列会成为笔记文件名（可自行选择），其余每一列都会成为一个 frontmatter 属性。
+在 **Column destinations** 中，一列用于笔记文件名，其余列可选择 **Property**（默认）或 **Note body**。一个正文列直接写入正文；多个正文列按源列顺序生成带列名标题的章节。正文列不会成为属性或 base 列。
 
 | 书名 | 作者 | 年份 |
 | --- | --- | --- |
@@ -114,7 +118,7 @@ John-Coltrane-His-Life-and-Music.md  # 约翰·柯川：他的一生与音乐 �
 
 ### 表格
 
-- **Filename column** — 哪一列成为笔记文件名。
+- **Column destinations** — 为每列选择 **Filename**、**Property** 或 **Note body**。更换文件名列时，请先将新列设为 **Filename**。
 - **Field names** — 对于无表头的表格，为每一列的属性命名（默认 `Column 1`、`Column 2`……）。
 
 ### Bases
@@ -132,7 +136,7 @@ John-Coltrane-His-Life-and-Music.md  # 约翰·柯川：他的一生与音乐 �
 
 - **Skip** — 保持已存在的笔记不变。
 - **Create with suffix** — 将你的后缀添加到文件名。进一步的冲突会编号（`File copy.md`、`File copy 2.md`……）。
-- **Merge, prefer new properties** — 保留已存在笔记的正文，并用转换后的值替换冲突的 frontmatter 属性。
+- **Merge, prefer new properties** — 用转换后的值替换冲突的 frontmatter 属性。
 - **Merge, prefer existing properties** — 保留已存在的 frontmatter 值，仅添加缺失的属性。
 
 合并选项将每个属性视为一个整体值。列表及其他属性值会整体替换或保留，而不会合并。
@@ -164,9 +168,25 @@ John-Coltrane-His-Life-and-Music.md  # 约翰·柯川：他的一生与音乐 �
 
 对话框始终是唯一事实来源：你在其中设置的内容就是实际使用的内容，并会成为下次的"last used"值。
 
+## 笔记正文
+
+列表默认将嵌套列表和缩进段落复制到父项笔记的正文，保留 Markdown。第一层子列表会移到正文行首，更深层的相对嵌套保持不变，支持空格和制表符缩进。光标位于列表内时，会检测周围的列表块；即使只选中父条目，也会包含该条目的全部嵌套内容，但不会包含下一个同级条目。源条目清理也使用这个完整范围，避免遗留孤立的子内容。子项不会独立生成笔记，其标签和字段保留为正文文字。可在转换对话框关闭 **Include nested content**；关闭后移除源条目也会移除未复制的子内容。
+
+合并现有笔记时，**Existing note body** 提供独立选择：
+
+- **Append at bottom (recommended)** — 默认保留原正文，并在末尾追加传入内容。重复转换可能追加重复文字。
+- **Replace existing body** — 替换原正文，并显示原内容将丢失的行内警告。属性仍按所选合并规则处理。
+- **Leave existing body unchanged** — 不复制传入正文；若移除源条目，会显示传入内容将丢失的行内警告。
+
+传入正文为空时不会修改现有正文，包括替换模式。**Skip** 不修改现有笔记；后缀模式创建独立副本。没有额外确认对话框，源内容是否移除完全遵循 **Source entries**。
+
+在 **Settings → Basify → Note body layout** 中可设置新笔记的 Markdown 正文布局，支持静态文字和 `{{title}}`（未进行文件名规范化的可读标题）、`{{body}}`（传入正文）、`{{source}}`（源笔记链接）。默认仅为 `{{body}}`。传入正文不为空时，布局必须包含 `{{body}}`。布局不支持脚本、条件或模板文件。合并时仅追加或替换传入内容，不重复套用布局。
+
+没有预览或额外工作流步骤；转换选项会被记住。现有用户升级后会看到一次标有 Basify 名称的功能介绍，可展开中文翻译，简要说明嵌套内容处理方式的变化，并提供自愿支持我学习普通话的 Ko-fi 和爱发电链接。点击链接会打开相应的外部网站，弹窗本身不会发送网络请求。关闭后不再显示；全新安装不显示。嵌套内容默认保留也适用于升级用户。
+
 ## 备份你的 vault
 
-Basify 可以创建笔记、将生成的属性合并到已有笔记，并移除已转换的源条目。它不会删除已有的笔记文件。与任何 vault 自动化一样，使用前请**确保已备份你的 vault**。
+Basify 可以创建笔记、将生成的属性合并到已有笔记、追加或替换正文，并移除已转换的源条目。它不会删除已有的笔记文件。与任何 vault 自动化一样，使用前请**确保已备份你的 vault**。
 
 ## 安装
 - 最佳安装方式是通过 Obsidian 社区插件市场安装。

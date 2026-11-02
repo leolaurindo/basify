@@ -1,10 +1,14 @@
 {
 	"id": "basify",
 	"name": "Basify",
-	"version": "0.1.9",
+	"version": "0.1.10",
 	"minAppVersion": "1.13.0",
 	"description": "Convert lists, tables and task lists into a base. One note per item.",
 	"author": "Leonardo Laurindo",
 	"authorUrl": "https://github.com/leolaurindo",
+	"fundingUrl": {
+		"Ko-fi": "https://ko-fi.com/leolaurindo",
+		"爱发电 / Afdian": "https://afdian.com/a/leolaurindo"
+	},
 	"isDesktopOnly": false
 }

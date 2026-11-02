@@ -6,9 +6,16 @@ Read this in [中文](README.zh.md).
 
 Convert a selected **list**, **task list**, or **table** into an [Obsidian base](https://obsidian.md/help/bases).
 
-Each list item, checkbox, or table row becomes its own note with frontmatter yaml. Basify can create a base that shows those notes as a table, or only create the base-ready notes.
+Each list item, checkbox, or table row becomes its own note with frontmatter yaml and optional Markdown body content. Basify can create a base that shows those notes as a table, or only create the base-ready notes.
 
-Consider leaving a ⭐ on [github](https://github.com/leolaurindo/basify) if you find basify useful.
+Enjoying Basify? Leave a ⭐ on [GitHub](https://github.com/leolaurindo/basify) and consider helping me fund my Mandarin studies!
+
+喜欢 Basify？欢迎在 [GitHub](https://github.com/leolaurindo/basify) 上点个 ⭐，也欢迎支持我学习普通话！
+
+<a href="https://ko-fi.com/leolaurindo"><img src="assets/kofi-support.png" alt="Support me on Ko-fi / 在 Ko-fi 支持我" width="200"></a>
+
+[Support on Afdian / 在爱发电支持我](#afdian)
+
 
 ## Usage
 
@@ -25,7 +32,17 @@ I advise you to use a [Linter](https://github.com/platers/obsidian-linter) along
 
 ### Lists
 
-Every item becomes a note named after it.
+Every item becomes a note named after it. Nested lists and indented paragraphs are copied into its body by default. First-level child lists move to the body’s left edge, while deeper nesting is preserved (including space- and tab-indented lists). Only parent-level entries become notes; child tags, tasks, and fields remain body text.
+
+With the cursor inside a list, Basify detects the surrounding list block. Selecting only a parent entry still includes its full nested content, without including the next sibling entry. Selecting part of an entry expands to include its remaining descendants. This also defines the entry’s source-cleanup range, so copied children are not left orphaned.
+
+```markdown
+- Research archives #research
+  Check the municipal collection first.
+  - Ask about digitized records.
+```
+
+Creates `Research archives.md` with a `research` tag and the paragraph and child list in its body. Turn off **Include nested content** to opt out; removing source entries then also removes their uncopied children.
 
 ```
 - Alan Turing
@@ -49,7 +66,9 @@ The metadata extract is removed from the note filename.
 
 ### Tables
 
-One column becomes the note filenames (you can choose); every other column becomes a frontmatter property.
+In **Column destinations**, choose one column for the note filenames and route each other column to **Property** (the default) or **Note body**. A single body column becomes plain body content; multiple body columns become sections headed by their column names, in source-column order. Empty body cells are omitted. Body-only columns do not become properties or base columns.
+
+By default, every non-filename column becomes a frontmatter property, as in this example:
 
 | Name        | Author        | Year |
 | ----------- | ------------- | ---- |
@@ -104,7 +123,7 @@ Use brackets for an explicit list: `authors: [Ada, Bob]`. Commas inside quoted i
 
 ### Tables
 
-- **Filename column** — which column becomes the note filenames.
+- **Column destinations** — choose **Filename**, **Property**, or **Note body** for each column. To change the filename column, select **Filename** on the new column first; the previous filename column becomes a property.
 - **Field names** — for headerless tables, name each column's property (default `Column 1`, `Column 2`, ...).
 
 ### Bases
@@ -122,8 +141,16 @@ Use brackets for an explicit list: `authors: [Ada, Bob]`. Commas inside quoted i
 
 - **Skip** — leave an existing note unchanged.
 - **Create with suffix** — add your suffix to the filename. Further conflicts are numbered (`File copy.md`, `File copy 2.md`, ...).
-- **Merge, prefer new properties** — preserve the existing note body and replace conflicting frontmatter properties with converted values.
+- **Merge, prefer new properties** — replace conflicting frontmatter properties with converted values.
 - **Merge, prefer existing properties** — preserve existing frontmatter values and add only properties that are missing.
+
+When merging, **Existing note body** independently controls incoming body content:
+
+- **Append at bottom (recommended)** — default; preserve existing text and add incoming content below it. Repeated conversions can append duplicate content.
+- **Replace existing body** — overwrite the existing body, with an inline warning that its current content will be lost. Frontmatter still follows the selected property-merge rule.
+- **Leave existing body unchanged** — do not copy incoming content. An inline warning explains that removing source entries discards that incoming content.
+
+Append and replace use incoming content only, without the new-note layout. Empty incoming content leaves the existing body unchanged, even in replace mode. **Skip** never modifies the existing note; suffix/hash modes create separate notes using the layout. There are no additional confirmation dialogs: source cleanup follows **Source entries**, including when incoming body content was not written.
 
 Merge choices treat each property as one value. Lists and other property values are replaced or preserved as a whole rather than combined.
 
@@ -154,9 +181,32 @@ Each can be one of:
 
 The dialog is always the source of truth: whatever you set there is what's used, and it becomes the "last used" value for the next time.
 
+### Note body layout
+
+In **Settings → Basify → Note body layout**, write Markdown with static text and these placeholders:
+
+- `{{title}}` — readable title before filename normalization, with extracted list metadata removed.
+- `{{body}}` — incoming content from table columns or nested list content.
+- `{{source}}` — an Obsidian link to the source note.
+
+The default is just `{{body}}`. For example:
+
+```markdown
+# {{title}}
+
+{{body}}
+
+---
+Source: {{source}}
+```
+
+The layout initializes new notes, including suffixed copies, after their YAML frontmatter. It does not run scripts or support conditions, template files, or arbitrary property substitutions. Conversions with incoming body content require `{{body}}` in the layout so that content cannot be accidentally omitted. There are no previews or extra workflow steps. Conversion choices are remembered globally and per source note.
+
+Existing users receive a one-time Basify announcement about this feature update, with an expandable 中文 translation, a brief explanation of the change to nested content handling, and optional Ko-fi and Afdian support links to help fund my Mandarin studies. Opening a support link takes you to that external website; the popup itself makes no network requests. Dismissing it is remembered; it does not reappear on subsequent launches or patch releases. Fresh installs do not show the update announcement. Nested-content preservation is enabled by default for existing users as well as fresh installs.
+
 ## Back up your vault
 
-Basify can create notes, merge generated properties into existing notes, and remove converted source entries. It does not delete existing note files. **Make sure you have a backup of your vault** before using it, as with any vault automation.
+Basify can create notes, merge generated properties, append or replace existing note bodies, and remove converted source entries. It does not delete existing note files. **Make sure you have a backup of your vault** before using it, as with any vault automation.
 
 ## Install
 - The best place to install is from obsidian community plugins.
@@ -187,3 +237,9 @@ git push origin master 0.1.2
 ```
 
 Pushing the tag runs the release workflow. It verifies the package and manifest versions, runs the tests, lint, and build, then creates the GitHub release with `main.js`, `manifest.json`, and `styles.css` attached.
+
+<a id="afdian"></a>
+
+## Support on Afdian / 在爱发电支持我
+
+<a href="https://afdian.com/a/leolaurindo"><img src="assets/afdian-support.jpg" alt="Support me on Afdian / 在爱发电支持我" width="300"></a>
